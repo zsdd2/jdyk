@@ -14,7 +14,8 @@ import {
   StreamableFile,
   UnauthorizedException,
 } from '@nestjs/common';
-import { createReadStream } from 'fs';
+import { createReadStream, existsSync, statSync } from 'fs';
+import { join, resolve } from 'path';
 import type { Response } from 'express';
 import type {
   AlbumDetailResponse,
@@ -67,12 +68,46 @@ export class AppController {
     return this.appService.getHealth();
   }
 
-  @Get('api/device/app-update/latest')
+  @Get('device/app-update/latest')
   getTvAppUpdateManifest() {
     return {
       code: 0,
       data: this.appService.getTvAppUpdateManifest(),
     };
+  }
+
+  @Get('releases/:fileName')
+  getReleaseApk(
+    @Param('fileName') fileName: string,
+    @Res({ passthrough: true }) response: Response,
+  ): StreamableFile {
+    if (!/^[A-Za-z0-9._-]+\.apk$/.test(fileName)) {
+      throw new NotFoundException('Release not found');
+    }
+
+    const releasesDirectory = resolve(
+      process.env.WRJDYK_RELEASES_DIR?.trim() || join(process.cwd(), 'releases'),
+    );
+    const releasePath = resolve(releasesDirectory, fileName);
+    if (
+      !releasePath.startsWith(`${releasesDirectory}\\`) &&
+      !releasePath.startsWith(`${releasesDirectory}/`)
+    ) {
+      throw new NotFoundException('Release not found');
+    }
+    if (!existsSync(releasePath) || !statSync(releasePath).isFile()) {
+      throw new NotFoundException('Release not found');
+    }
+
+    response.set({
+      'Cache-Control': 'public, max-age=300',
+      'Content-Disposition': `attachment; filename="${fileName}"`,
+      'Content-Type': 'application/vnd.android.package-archive',
+    });
+
+    return new StreamableFile(createReadStream(releasePath), {
+      type: 'application/vnd.android.package-archive',
+    });
   }
 
   @Post('auth/login')

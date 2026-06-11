@@ -101,6 +101,28 @@ jobs:
             --output build/release/latest.json \
             --published-at "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
             --release-notes "$RELEASE_NOTES"
+          node --input-type=module - <<'NODE'
+          import { readFile, writeFile } from 'node:fs/promises';
+
+          const manifest = JSON.parse(
+            await readFile('build/release/latest.json', 'utf8'),
+          );
+          const lines = [
+            `WRJDYK_TV_UPDATE_VERSION_CODE=${manifest.versionCode}`,
+            `WRJDYK_TV_UPDATE_VERSION_NAME=${manifest.versionName}`,
+            'WRJDYK_TV_UPDATE_APK_URL=http://${FEINIU_HOST}:3999/releases/wangri-tv-1.0.apk',
+            `WRJDYK_TV_UPDATE_SHA256=${manifest.sha256}`,
+            `WRJDYK_TV_UPDATE_SIZE_BYTES=${manifest.sizeBytes}`,
+            `WRJDYK_TV_UPDATE_FORCE=${manifest.forceUpdate}`,
+            `WRJDYK_TV_UPDATE_NOTES=${manifest.releaseNotes}`,
+            `WRJDYK_TV_UPDATE_PUBLISHED_AT=${manifest.publishedAt}`,
+          ];
+          await writeFile(
+            'build/release/feiniu-update.env',
+            `${lines.join('\n')}\n`,
+            'utf8',
+          );
+          NODE
           echo "tag=${tag}" >> "$GITHUB_OUTPUT"
           echo "asset_name=${asset_name}" >> "$GITHUB_OUTPUT"
 

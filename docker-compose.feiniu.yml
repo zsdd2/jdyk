@@ -1,0 +1,60 @@
+name: jdyk
+
+services:
+  backend:
+    image: ghcr.io/zsdd2/jdyk-backend:${JDYK_VERSION:-1.0}
+    container_name: jdyk-backend
+    restart: unless-stopped
+    environment:
+      PORT: 3999
+      WRJDYK_PHOTO_SOURCE: ${WRJDYK_PHOTO_SOURCE:-feiniu}
+      WRJDYK_FEINIU_BASE_URL: ${WRJDYK_FEINIU_BASE_URL}
+      WRJDYK_FEINIU_USERNAME: ${WRJDYK_FEINIU_USERNAME}
+      WRJDYK_FEINIU_PASSWORD: ${WRJDYK_FEINIU_PASSWORD}
+      WRJDYK_RELEASES_DIR: /workspace/releases
+      WRJDYK_TV_UPDATE_VERSION_CODE: ${WRJDYK_TV_UPDATE_VERSION_CODE:-5}
+      WRJDYK_TV_UPDATE_VERSION_NAME: ${WRJDYK_TV_UPDATE_VERSION_NAME:-1.0}
+      WRJDYK_TV_UPDATE_APK_URL: http://${FEINIU_HOST}:3999/releases/wangri-tv-1.0.apk
+      WRJDYK_TV_UPDATE_SHA256: ${WRJDYK_TV_UPDATE_SHA256:-}
+      WRJDYK_TV_UPDATE_SIZE_BYTES: ${WRJDYK_TV_UPDATE_SIZE_BYTES:-0}
+      WRJDYK_TV_UPDATE_FORCE: ${WRJDYK_TV_UPDATE_FORCE:-false}
+      WRJDYK_TV_UPDATE_NOTES: ${WRJDYK_TV_UPDATE_NOTES:-Android TV 1.0}
+      WRJDYK_TV_UPDATE_PUBLISHED_AT: ${WRJDYK_TV_UPDATE_PUBLISHED_AT:-}
+    ports:
+      - "3999:3999"
+    volumes:
+      - ./data/backend:/workspace/apps/backend-api/data
+      - ./data/media-cache:/workspace/media-cache
+      - ./data/releases:/workspace/releases
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - fetch('http://127.0.0.1:3999/api/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  admin:
+    image: ghcr.io/zsdd2/jdyk-admin:${JDYK_VERSION:-1.0}
+    container_name: jdyk-admin
+    restart: unless-stopped
+    depends_on:
+      backend:
+        condition: service_healthy
+    ports:
+      - "5200:8080"
+    healthcheck:
+      test:
+        - CMD
+        - wget
+        - -q
+        - -O
+        - /dev/null
+        - http://127.0.0.1:8080/healthz
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 10s

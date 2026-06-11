@@ -1,6 +1,14 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { NotFoundException, UnauthorizedException } from '@nestjs/common';
-import { createReadStream, existsSync, mkdirSync, readdirSync, rmSync, statSync } from 'fs';
+import {
+  createReadStream,
+  existsSync,
+  mkdirSync,
+  readdirSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from 'fs';
 import { join } from 'path';
 import { AppController } from './app.controller';
 import {
@@ -119,6 +127,57 @@ describe('AppController', () => {
       restoreEnv('WRJDYK_TV_UPDATE_VERSION_CODE', previousEnv.versionCode);
       restoreEnv('WRJDYK_TV_UPDATE_VERSION_NAME', previousEnv.versionName);
     });
+
+    it('streams an APK from the configured releases directory', async () => {
+      const previousReleaseDir = process.env.WRJDYK_RELEASES_DIR;
+      const releaseDir = join(testDataDir, 'releases');
+      mkdirSync(releaseDir, { recursive: true });
+      writeFileSync(join(releaseDir, 'wangri-tv-1.0.apk'), 'apk-content');
+      process.env.WRJDYK_RELEASES_DIR = releaseDir;
+      const response = { set: jest.fn() };
+
+      try {
+        const file = appController.getReleaseApk(
+          'wangri-tv-1.0.apk',
+          response as never,
+        );
+
+        expect(file).toBeDefined();
+        expect(response.set).toHaveBeenCalledWith({
+          'Cache-Control': 'public, max-age=300',
+          'Content-Disposition': 'attachment; filename="wangri-tv-1.0.apk"',
+          'Content-Type': 'application/vnd.android.package-archive',
+        });
+        const chunks: Buffer[] = [];
+        for await (const chunk of file.getStream()) {
+          chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+        }
+        expect(Buffer.concat(chunks).toString()).toBe('apk-content');
+      } finally {
+        restoreEnv('WRJDYK_RELEASES_DIR', previousReleaseDir);
+        rmSync(releaseDir, { force: true, recursive: true });
+      }
+    });
+
+    it.each([
+      '../secret.apk',
+      'latest.json',
+      'missing.apk',
+    ])('rejects unsafe or missing release file %s', (fileName) => {
+      const previousReleaseDir = process.env.WRJDYK_RELEASES_DIR;
+      const releaseDir = join(testDataDir, 'releases-empty');
+      mkdirSync(releaseDir, { recursive: true });
+      process.env.WRJDYK_RELEASES_DIR = releaseDir;
+
+      try {
+        expect(() =>
+          appController.getReleaseApk(fileName, { set: jest.fn() } as never),
+        ).toThrow(NotFoundException);
+      } finally {
+        restoreEnv('WRJDYK_RELEASES_DIR', previousReleaseDir);
+        rmSync(releaseDir, { force: true, recursive: true });
+      }
+    });
   });
 
   describe('admin auth', () => {
@@ -194,7 +253,7 @@ describe('AppController', () => {
         data: expect.objectContaining({
           albumCount: 3,
           databasePath: expect.stringContaining('.sqlite'),
-          migrationVersion: 13,
+          migrationVersion: 14,
           photoCount: 9,
           photoRoot: expect.stringContaining('ceshi'),
         }),

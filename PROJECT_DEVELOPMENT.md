@@ -756,3 +756,67 @@ CodeGraph 状态：
 - 新增后端与管理端生产镜像、GHCR 多架构发布 workflow。
 - 新增 `docker-compose.feiniu.yml`、环境变量样例和飞牛安装说明。
 - 发布后验证 GHCR 公共拉取、Compose 健康状态以及 TV 从飞牛本地下载升级。
+
+## 21. 2026-06-12 Android TV 1.0 与飞牛 GHCR 实施
+
+当前修改目标：
+- 落地 Android TV `1.0`、飞牛本地 APK 更新地址、公开 GHCR 双镜像与生产
+  Compose。
+
+当前状态：
+- Android TV 已更新为 `versionCode=5`、`versionName=1.0`。
+- 后端新增安全 APK 下载路由：
+  `GET /releases/:fileName`。
+- 更新清单实际地址已修正并验证为：
+  `GET /api/device/app-update/latest`。
+- 已新增生产镜像：
+  - `deploy/backend.Dockerfile`
+  - `deploy/admin.Dockerfile`
+  - `deploy/nginx.conf`
+- 已新增飞牛部署包：
+  - `docker-compose.feiniu.yml`
+  - `.env.feiniu.example`
+  - `docs/FEINIU_DEPLOYMENT.md`
+- 已新增 GHCR 多架构发布 workflow，目标平台为
+  `linux/amd64,linux/arm64`，并在发布后将包设为公开。
+- Android Release workflow 会额外生成 `feiniu-update.env`，方便将版本、
+  SHA256、大小和发布时间同步到飞牛。
+
+验证记录：
+- Android manifest 脚本测试：3 个通过。
+- 后端控制器测试：59 个通过。
+- 后端 Nest 构建：通过。
+- 管理端生产构建：通过。
+- 后端 `pnpm deploy --prod --legacy --ignore-scripts`：通过，裁剪产物包含
+  Nest 和 Sharp 运行依赖。
+- `docker compose config`：通过，确认镜像、端口、卷和本地 APK 地址展开正确。
+- Compose、GHCR 和 Android Release 三个 YAML 文件解析通过。
+- Android 单测、debug APK 和 release APK 构建：`BUILD SUCCESSFUL`。
+- debug APK：
+  - 大小 `11866852` bytes
+  - SHA256
+    `fb0da1946d6f93ed13fe89daf4d1d0430639fa11d92ec8727d5c29f3cadcec3f`
+  - 签名为 Android Debug，仅用于本地验证。
+- release APK 当前为 `app-release-unsigned.apk`：
+  - 大小 `8611816` bytes
+  - SHA256
+    `d8cdab2cad86f506f21f7c12744a4a3e8c1b7e3bc78900c48d8ee4fcc3000054`
+  - 未签名，不可作为正式远程更新包。
+- 使用临时 `4099` 后端真实验证：
+  - `/api/health`：200
+  - `/api/device/app-update/latest`：返回版本 `5 / 1.0`
+  - `/releases/wangri-tv-1.0.apk`：200，类型
+    `application/vnd.android.package-archive`
+
+当前阻塞：
+- 本机 Docker Desktop Linux Engine 未运行，因此未完成本机镜像实际构建和
+  Compose 容器启动；Dockerfile 的构建阶段已通过等价本地命令验证。
+- 本机没有 GitHub CLI，无法预检查仓库中的 `ANDROID_TV_*` 签名 Secret。
+  正式 `tv-v1.0` 发布必须由 GitHub Actions 使用长期签名证书生成。
+
+后续计划：
+- 提交并推送 `main`，触发 GHCR workflow。
+- 确认两个 GHCR 包均为公开并可由飞牛匿名拉取。
+- 确认 GitHub Android 签名 Secret 后创建 `tv-v1.0` 标签，发布签名 APK、
+  `latest.json` 和 `feiniu-update.env`。
+- 将签名 APK 放入飞牛 `./data/releases`，使用旧版 TV APK 完成真实远程升级。

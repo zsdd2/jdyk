@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { mkdtemp, readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 import test from 'node:test';
 
 import { createUpdateManifest, parseAndroidVersion } from './generate-update-manifest.mjs';
@@ -10,6 +10,18 @@ test('parses Android version metadata', () => {
   assert.deepEqual(parseAndroidVersion("versionCode 7\nversionName '1.2.3'"), {
     versionCode: 7,
     versionName: '1.2.3',
+  });
+});
+
+test('Android TV release metadata is version 1.0', async () => {
+  const buildGradle = await readFile(
+    resolve('apps/android-tv/app/build.gradle'),
+    'utf8',
+  );
+
+  assert.deepEqual(parseAndroidVersion(buildGradle), {
+    versionCode: 5,
+    versionName: '1.0',
   });
 });
 
