@@ -10,7 +10,7 @@ RUN corepack enable
 
 COPY . .
 
-RUN pnpm install --frozen-lockfile
+RUN pnpm install --frozen-lockfile --ignore-scripts
 RUN pnpm -F @vben/web-antd run build
 
 FROM nginx:1.27-alpine AS production

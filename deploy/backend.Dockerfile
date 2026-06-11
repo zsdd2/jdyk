@@ -10,7 +10,7 @@ RUN corepack enable
 
 COPY . .
 
-RUN pnpm install --frozen-lockfile
+RUN pnpm install --frozen-lockfile --ignore-scripts
 RUN pnpm -F @wrjdyk/backend-api run build
 RUN pnpm deploy \
   --filter @wrjdyk/backend-api \

@@ -820,3 +820,16 @@ CodeGraph 状态：
 - 确认 GitHub Android 签名 Secret 后创建 `tv-v1.0` 标签，发布签名 APK、
   `latest.json` 和 `feiniu-update.env`。
 - 将签名 APK 放入飞牛 `./data/releases`，使用旧版 TV APK 完成真实远程升级。
+
+GHCR 首次发布跟进：
+- GitHub Actions 运行 `27378683430` 中，管理端镜像在容器内执行
+  `pnpm install --frozen-lockfile` 时失败；后端镜像因矩阵默认快速失败被取消。
+- 本地 `pnpm install --frozen-lockfile --ignore-scripts` 已通过，确认锁文件没有漂移。
+- 两个 Dockerfile 的依赖安装已改为跳过无产物贡献的仓库级生命周期脚本；仓库当前没有
+  实际 `stub` 脚本，CI 的 `prepare` 也会被跳过。
+- GHCR 发布矩阵已设置 `fail-fast: false`，后续单个镜像失败不会取消另一个镜像的构建。
+
+下一步：
+- 推送修复并观察新一轮 GHCR 多架构构建。
+- 构建成功后使用匿名 GHCR Registry API 验证 `1.0` 标签及
+  `linux/amd64`、`linux/arm64` 清单。
