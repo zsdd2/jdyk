@@ -1,0 +1,736 @@
+openapi: 3.1.0
+info:
+  title: 往日重现 2.0 API Contract
+  version: 0.2.0
+  description: >
+    2.0 契约草案。当前 NestJS 后端先按该契约演进，后续 FastAPI + PostgreSQL
+    迁移时保持字段兼容。
+servers:
+  - url: http://localhost:3999/api
+    description: local NestJS bridge
+paths:
+  /auth/login:
+    post:
+      summary: TV 端账号密码登录往日重现后端
+      tags: [TV Auth]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoginRequest'
+      responses:
+        '200':
+          description: 登录成功并返回设备令牌
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LoginResponse'
+  /device/app-update/latest:
+    get:
+      summary: TV 端检查最新 APK 更新
+      tags: [TV App Update]
+      responses:
+        '200':
+          description: 最新 APK 更新 manifest；没有可用更新时字段为空或 versionCode 为 0
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TvAppUpdateManifestEnvelope'
+  /admin/photo-library/playback-albums:
+    get:
+      summary: 管控端播放相册列表
+      tags: [Admin Playback Albums]
+      responses:
+        '200':
+          description: 播放相册列表
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PlaybackAlbumListEnvelope'
+    post:
+      summary: 新建播放相册
+      tags: [Admin Playback Albums]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreatePlaybackAlbumRequest'
+      responses:
+        '200':
+          description: 创建结果
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PlaybackAlbumEnvelope'
+  /admin/photo-library/playback-albums/{playbackAlbumId}/photos:
+    get:
+      summary: 查看播放相册照片，包含本地成员和按需读取的飞牛相册照片
+      tags: [Admin Playback Albums]
+      parameters:
+        - $ref: '#/components/parameters/PlaybackAlbumId'
+      responses:
+        '200':
+          description: 播放相册成员
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PhotoCenterItemsEnvelope'
+  /admin/photo-library/playback-albums/{playbackAlbumId}/ai-policy:
+    patch:
+      summary: 更新相册 AI 开关和策略，开启时触发按需导入与 AI 持久化
+      tags: [Admin AI]
+      parameters:
+        - $ref: '#/components/parameters/PlaybackAlbumId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdatePlaybackAlbumAiPolicyRequest'
+      responses:
+        '200':
+          description: AI 策略更新结果
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PlaybackAlbumAiPolicyUpdateEnvelope'
+  /admin/photo-library/playback-albums/{playbackAlbumId}/ai-jobs:
+    post:
+      summary: 手动触发播放相册 AI 任务
+      tags: [Admin AI]
+      parameters:
+        - $ref: '#/components/parameters/PlaybackAlbumId'
+      responses:
+        '200':
+          description: AI 任务结果
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PlaybackAlbumAiJobEnvelope'
+  /admin/photo-library/photos/{photoId}/ai-sync:
+    post:
+      summary: 将照片已保存的 AI 原始返回重新解析并同步到结构化字段，不调用模型
+      tags: [Admin AI]
+      parameters:
+        - name: photoId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: 同步后的照片详情
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PhotoCenterItemEnvelope'
+  /admin/photo-library/ai-settings:
+    get:
+      summary: 获取 AI 设置中心配置
+      tags: [Admin AI]
+      responses:
+        '200':
+          description: AI 设置
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AiSettingsEnvelope'
+    put:
+      summary: 保存 AI 平台、模型、接口地址、API Key 和提示词
+      tags: [Admin AI]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateAiSettingsRequest'
+      responses:
+        '200':
+          description: AI 设置
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AiSettingsEnvelope'
+  /admin/photo-library/ai-tasks:
+    get:
+      summary: 获取 AI 识别任务进度列表
+      tags: [Admin AI]
+      responses:
+        '200':
+          description: 最近 AI 识别任务，来自持久化任务表
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AiRecognitionTaskListEnvelope'
+  /device/daily-themes:
+    get:
+      summary: TV 拉取每日静态主题流
+      tags: [TV Playback]
+      security:
+        - deviceToken: []
+      responses:
+        '200':
+          description: 每日 5-10 张质量优先推送
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DailyThemesResponse'
+components:
+  securitySchemes:
+    deviceToken:
+      type: apiKey
+      in: header
+      name: x-device-token
+  parameters:
+    PlaybackAlbumId:
+      name: playbackAlbumId
+      in: path
+      required: true
+      schema:
+        type: string
+  schemas:
+    EnvelopeBase:
+      type: object
+      properties:
+        code:
+          type: integer
+          const: 0
+      required: [code]
+    LoginRequest:
+      type: object
+      properties:
+        username:
+          type: string
+        password:
+          type: string
+      required: [username, password]
+    LoginResponse:
+      allOf:
+        - $ref: '#/components/schemas/EnvelopeBase'
+        - type: object
+          properties:
+            data:
+              type: object
+              properties:
+                deviceToken:
+                  type: string
+                expiresAt:
+                  type: string
+                  format: date-time
+                username:
+                  type: string
+              required: [deviceToken]
+          required: [data]
+    TvAppUpdateManifest:
+      type: object
+      properties:
+        apkUrl:
+          type: string
+          description: APK 下载地址，可指向飞牛/后端/GitHub Release 产物。
+        forceUpdate:
+          type: boolean
+        publishedAt:
+          type: string
+        releaseNotes:
+          type: string
+        sha256:
+          type: string
+          description: APK SHA256；为空时 TV 端跳过哈希校验。
+        sizeBytes:
+          type: integer
+          format: int64
+          description: APK 文件大小；0 表示不校验大小。
+        versionCode:
+          type: integer
+          description: Android versionCode，必须大于当前 APK 才提示升级。
+        versionName:
+          type: string
+      required:
+        - apkUrl
+        - forceUpdate
+        - publishedAt
+        - releaseNotes
+        - sha256
+        - sizeBytes
+        - versionCode
+        - versionName
+    TvAppUpdateManifestEnvelope:
+      allOf:
+        - $ref: '#/components/schemas/EnvelopeBase'
+        - type: object
+          properties:
+            data:
+              $ref: '#/components/schemas/TvAppUpdateManifest'
+          required: [data]
+    PlaybackAlbum:
+      type: object
+      properties:
+        playbackAlbumId:
+          type: string
+        title:
+          type: string
+        sourceType:
+          type: string
+          enum: [manual, feiniu_album]
+        sourceAlbumId:
+          type: string
+        sourceAlbumTitle:
+          type: string
+        aiEnabled:
+          type: boolean
+        aiScoreThreshold:
+          type: integer
+        aiPriorityTags:
+          type: array
+          items:
+            type: string
+        pushEnabled:
+          type: boolean
+        pushScoreThreshold:
+          type: integer
+        pushPriorityTags:
+          type: array
+          items:
+            type: string
+        photoCount:
+          type: integer
+      required: [playbackAlbumId, title, sourceType, aiEnabled, photoCount]
+    CreatePlaybackAlbumRequest:
+      type: object
+      properties:
+        title:
+          type: string
+        sourceType:
+          type: string
+          enum: [manual, feiniu_album]
+        sourceAlbumId:
+          type: string
+        sourceAlbumTitle:
+          type: string
+        aiEnabled:
+          type: boolean
+        aiScoreThreshold:
+          type: integer
+        pushEnabled:
+          type: boolean
+        pushScoreThreshold:
+          type: integer
+      required: [title]
+    PhotoCenterItem:
+      type: object
+      properties:
+        photoId:
+          type: string
+        filename:
+          type: string
+        thumbnailUrl:
+          type: string
+          description: 管控端 300px 缩略图 URL；当前过渡期可能仍是代理缩略图。
+        derivativeStatus:
+          type: string
+          enum: [failed, pending, ready]
+          description: 三规格派生图生成状态。
+        sourceType:
+          type: string
+          enum: [local, feiniu]
+        sourceAlbumId:
+          type: string
+        albumName:
+          type: string
+        aiScore:
+          type: integer
+          nullable: true
+        aiScoreStatus:
+          type: string
+          enum: [pending, completed, failed]
+        aiComment:
+          type: string
+        aiCommentStatus:
+          type: string
+          enum: [pending, completed, failed]
+        aiTags:
+          type: array
+          items:
+            type: string
+        aiMemoryScore:
+          type: integer
+          nullable: true
+          description: 情感记忆价值评分，来自统一 Vision AI。
+        aiBeautyScore:
+          type: integer
+          nullable: true
+          description: 构图与光影美感评分，来自统一 Vision AI。
+        aiIsTrash:
+          type: boolean
+          description: 是否为废片。
+        aiReason:
+          type: string
+          description: AI 简短理由。
+        aiLayout:
+          type: object
+          properties:
+            position:
+              type: string
+              enum: [top_left, top_right, bottom_left, bottom_right, center_safe]
+            safeArea:
+              type: object
+              properties:
+                x:
+                  type: number
+                y:
+                  type: number
+                w:
+                  type: number
+                h:
+                  type: number
+            textColor:
+              type: string
+              enum: ['#FFFFFF', '#000000']
+            fontStyle:
+              type: string
+              enum: [serif, sans-serif, handwriting]
+        removable:
+          type: boolean
+          description: true 表示可从播放相册移除；飞牛来源相册成员为 false。
+      required: [photoId, thumbnailUrl, derivativeStatus, sourceType, aiScoreStatus, aiCommentStatus]
+    UpdatePlaybackAlbumAiPolicyRequest:
+      type: object
+      properties:
+        aiEnabled:
+          type: boolean
+        aiScoreThreshold:
+          type: integer
+        aiPriorityTags:
+          type: array
+          items:
+            type: string
+    PlaybackAlbumAiJob:
+      type: object
+      properties:
+        jobId:
+          type: string
+        status:
+          type: string
+          enum: [queued, completed]
+        requestedPhotoCount:
+          type: integer
+        importedSourcePhotoCount:
+          type: integer
+        generatedPhotoCount:
+          type: integer
+        skippedPhotoCount:
+          type: integer
+        startedAt:
+          type: string
+          format: date-time
+        finishedAt:
+          type: string
+          format: date-time
+      required:
+        - jobId
+        - status
+        - requestedPhotoCount
+        - importedSourcePhotoCount
+        - generatedPhotoCount
+        - skippedPhotoCount
+    AiSettings:
+      type: object
+      properties:
+        provider:
+          type: string
+        model:
+          type: string
+        baseUrl:
+          type: string
+        apiKeyConfigured:
+          type: boolean
+        scoringPrompt:
+          type: string
+        commentPrompt:
+          type: string
+        classificationPrompt:
+          type: string
+      required: [provider, model, baseUrl, apiKeyConfigured]
+    AiRecognitionTask:
+      type: object
+      properties:
+        jobId:
+          type: string
+        targetType:
+          type: string
+          enum: [album, photo, retry]
+        targetId:
+          type: string
+        targetTitle:
+          type: string
+        albumId:
+          type: string
+        albumTitle:
+          type: string
+        status:
+          type: string
+          enum: [queued, running, retrying, completed, failed]
+        requestedPhotoCount:
+          type: integer
+        completedPhotoCount:
+          type: integer
+        skippedPhotoCount:
+          type: integer
+        failedPhotoCount:
+          type: integer
+        activePhotoId:
+          type: string
+        activePhotoName:
+          type: string
+        error:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        lastUpdatedAt:
+          type: string
+          format: date-time
+        finishedAt:
+          type: string
+          format: date-time
+      required:
+        - jobId
+        - targetType
+        - targetId
+        - status
+        - requestedPhotoCount
+        - completedPhotoCount
+        - skippedPhotoCount
+        - failedPhotoCount
+        - createdAt
+        - lastUpdatedAt
+    PhotoTvPayloadV1:
+      type: object
+      properties:
+        schema_version:
+          type: string
+          const: photo_tv_payload_v1
+        photo_analysis:
+          type: object
+          properties:
+            caption:
+              type: string
+          required: [caption]
+        evaluation:
+          type: object
+          properties:
+            memory_score:
+              type: number
+            beauty_score:
+              type: number
+            is_trash:
+              type: boolean
+            reason:
+              type: string
+          required: [memory_score, beauty_score, is_trash, reason]
+        classification:
+          type: object
+          properties:
+            category:
+              type: string
+            scene_tags:
+              type: array
+              items:
+                type: string
+            tv_suitability:
+              type: string
+              enum: [high, medium, low]
+          required: [category, scene_tags]
+        narration:
+          type: object
+          properties:
+            variants:
+              type: array
+              minItems: 5
+              maxItems: 5
+              items:
+                type: object
+                properties:
+                  scene_description:
+                    type: string
+                  handwritten_thought:
+                    type: string
+                  lyrical_closure:
+                    type: string
+                required: [scene_description, handwritten_thought, lyrical_closure]
+          required: [variants]
+        tv_layout:
+          type: object
+          properties:
+            layout:
+              type: object
+              properties:
+                position_anchor:
+                  type: string
+                  enum: [top_left, top_right, bottom_left, bottom_right, center_safe]
+                safe_area:
+                  type: object
+                  properties:
+                    x:
+                      type: number
+                    y:
+                      type: number
+                    w:
+                      type: number
+                    h:
+                      type: number
+                  required: [x, y, w, h]
+                text_color:
+                  type: string
+                  enum: ['#FFFFFF', '#000000']
+              required: [position_anchor, safe_area, text_color]
+            typography:
+              type: object
+          required: [layout]
+        push_decision:
+          type: object
+          properties:
+            should_push:
+              type: boolean
+            push_reason:
+              type: string
+      required:
+        - schema_version
+        - photo_analysis
+        - evaluation
+        - classification
+        - narration
+        - tv_layout
+    UpdateAiSettingsRequest:
+      type: object
+      properties:
+        provider:
+          type: string
+        model:
+          type: string
+        baseUrl:
+          type: string
+        apiKey:
+          type: string
+        scoringPrompt:
+          type: string
+        commentPrompt:
+          type: string
+        classificationPrompt:
+          type: string
+    DailyThemesResponse:
+      type: object
+      properties:
+        themeDate:
+          type: string
+          format: date
+        expiresAt:
+          type: string
+          format: date-time
+        items:
+          type: array
+          maxItems: 10
+          items:
+            type: object
+            properties:
+              photoId:
+                type: string
+              displayWebpUrl:
+                type: string
+              copywriting:
+                type: string
+              layout:
+                type: object
+                properties:
+                  position:
+                    type: string
+                    enum: [top_left, top_right, bottom_left, bottom_right, center_safe]
+                  textColor:
+                    type: string
+                  fontStyle:
+                    type: string
+                    enum: [serif, sans-serif, handwriting]
+              score:
+                type: integer
+              tags:
+                type: array
+                items:
+                  type: string
+    PlaybackAlbumEnvelope:
+      allOf:
+        - $ref: '#/components/schemas/EnvelopeBase'
+        - type: object
+          properties:
+            data:
+              $ref: '#/components/schemas/PlaybackAlbum'
+          required: [data]
+    PlaybackAlbumListEnvelope:
+      allOf:
+        - $ref: '#/components/schemas/EnvelopeBase'
+        - type: object
+          properties:
+            data:
+              type: array
+              items:
+                $ref: '#/components/schemas/PlaybackAlbum'
+          required: [data]
+    PhotoCenterItemsEnvelope:
+      allOf:
+        - $ref: '#/components/schemas/EnvelopeBase'
+        - type: object
+          properties:
+            data:
+              type: array
+              items:
+                $ref: '#/components/schemas/PhotoCenterItem'
+          required: [data]
+    PhotoCenterItemEnvelope:
+      allOf:
+        - $ref: '#/components/schemas/EnvelopeBase'
+        - type: object
+          properties:
+            data:
+              $ref: '#/components/schemas/PhotoCenterItem'
+          required: [data]
+    PlaybackAlbumAiJobEnvelope:
+      allOf:
+        - $ref: '#/components/schemas/EnvelopeBase'
+        - type: object
+          properties:
+            data:
+              $ref: '#/components/schemas/PlaybackAlbumAiJob'
+          required: [data]
+    PlaybackAlbumAiPolicyUpdateEnvelope:
+      allOf:
+        - $ref: '#/components/schemas/EnvelopeBase'
+        - type: object
+          properties:
+            data:
+              type: object
+              properties:
+                album:
+                  $ref: '#/components/schemas/PlaybackAlbum'
+                aiJob:
+                  $ref: '#/components/schemas/PlaybackAlbumAiJob'
+              required: [album]
+          required: [data]
+    AiSettingsEnvelope:
+      allOf:
+        - $ref: '#/components/schemas/EnvelopeBase'
+        - type: object
+          properties:
+            data:
+              $ref: '#/components/schemas/AiSettings'
+          required: [data]
+    AiRecognitionTaskListEnvelope:
+      allOf:
+        - $ref: '#/components/schemas/EnvelopeBase'
+        - type: object
+          properties:
+            data:
+              type: array
+              items:
+                $ref: '#/components/schemas/AiRecognitionTask'
+          required: [data]

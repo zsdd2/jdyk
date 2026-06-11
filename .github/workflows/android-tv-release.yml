@@ -1,0 +1,132 @@
+name: Android TV Release
+
+on:
+  push:
+    tags:
+      - 'tv-v*'
+  workflow_dispatch:
+    inputs:
+      force_update:
+        description: Force this update on TV devices
+        required: true
+        default: false
+        type: boolean
+      release_notes:
+        description: Release notes shown on the TV
+        required: false
+        default: Android TV update
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  build-release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: apps/android-tv
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: gradle
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Validate signing secrets
+        env:
+          KEYSTORE_BASE64: ${{ secrets.ANDROID_TV_KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.ANDROID_TV_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ANDROID_TV_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.ANDROID_TV_KEY_PASSWORD }}
+        run: |
+          test -n "$KEYSTORE_BASE64"
+          test -n "$KEYSTORE_PASSWORD"
+          test -n "$KEY_ALIAS"
+          test -n "$KEY_PASSWORD"
+
+      - name: Restore release keystore
+        env:
+          KEYSTORE_BASE64: ${{ secrets.ANDROID_TV_KEYSTORE_BASE64 }}
+        run: echo "$KEYSTORE_BASE64" | base64 --decode > release.keystore
+
+      - name: Build signed release APK
+        env:
+          ANDROID_TV_KEYSTORE_FILE: ${{ github.workspace }}/apps/android-tv/release.keystore
+          ANDROID_TV_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_TV_KEYSTORE_PASSWORD }}
+          ANDROID_TV_KEY_ALIAS: ${{ secrets.ANDROID_TV_KEY_ALIAS }}
+          ANDROID_TV_KEY_PASSWORD: ${{ secrets.ANDROID_TV_KEY_PASSWORD }}
+          WRJDYK_TV_DEFAULT_SERVER_URL: ${{ vars.WRJDYK_TV_DEFAULT_SERVER_URL }}
+        run: |
+          chmod +x gradlew
+          ./gradlew clean :app:assembleRelease --no-daemon
+
+      - name: Prepare release files
+        id: release
+        env:
+          FORCE_UPDATE: ${{ inputs.force_update || false }}
+          RELEASE_NOTES: ${{ inputs.release_notes || 'Android TV update' }}
+        run: |
+          version_name=$(sed -n "s/.*versionName ['\"]\([^'\"]*\)['\"].*/\1/p" app/build.gradle | head -1)
+          if [ -z "$version_name" ]; then
+            echo "Unable to read versionName" >&2
+            exit 1
+          fi
+          tag="${GITHUB_REF_NAME}"
+          if [ "${GITHUB_EVENT_NAME}" = "workflow_dispatch" ]; then
+            tag="tv-v${version_name}"
+          fi
+          asset_name="wangri-tv-${version_name}.apk"
+          mkdir -p build/release
+          cp app/build/outputs/apk/release/app-release.apk "build/release/${asset_name}"
+          apk_url="https://github.com/${GITHUB_REPOSITORY}/releases/download/${tag}/${asset_name}"
+          node ../../scripts/android-tv/generate-update-manifest.mjs \
+            --apk "build/release/${asset_name}" \
+            --apk-url "$apk_url" \
+            --build-gradle app/build.gradle \
+            --force-update "$FORCE_UPDATE" \
+            --output build/release/latest.json \
+            --published-at "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+            --release-notes "$RELEASE_NOTES"
+          echo "tag=${tag}" >> "$GITHUB_OUTPUT"
+          echo "asset_name=${asset_name}" >> "$GITHUB_OUTPUT"
+
+      - name: Verify APK signature
+        run: |
+          apksigner=$(find "$ANDROID_HOME/build-tools" -type f -name apksigner | sort -V | tail -1)
+          test -n "$apksigner"
+          "$apksigner" verify --print-certs "build/release/${{ steps.release.outputs.asset_name }}"
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-tv-${{ steps.release.outputs.tag }}
+          path: apps/android-tv/build/release/*
+          if-no-files-found: error
+
+      - name: Publish GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.release.outputs.tag }}
+        run: |
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" build/release/* --clobber
+          else
+            gh release create "$TAG" build/release/* \
+              --target "$GITHUB_SHA" \
+              --title "Android TV ${TAG#tv-v}" \
+              --notes-file build/release/latest.json
+          fi

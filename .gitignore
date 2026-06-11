@@ -1,0 +1,95 @@
+node_modules
+.DS_Store
+dist
+dist-ssr
+dist.zip
+dist.tar
+dist.war
+.nitro
+.output
+*-dist.zip
+*-dist.tar
+*-dist.war
+coverage
+*.local
+**/.vitepress/cache
+.cache
+.turbo
+.temp
+dev-dist
+.stylelintcache
+yarn.lock
+package-lock.json
+.VSCodeCounter
+**/backend-mock/data
+.omx
+.pnpm-store
+# local env files
+.env
+.env.*
+**/.env
+**/.env.*
+!.env.example
+!**/.env.example
+.env.local
+.env.*.local
+.eslintcache
+
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+vite.config.mts.*
+vite.config.mjs.*
+vite.config.js.*
+vite.config.ts.*
+
+# Editor directories and files
+.idea
+# .vscode
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+.history
+.cursor
+
+# AI
+.agent
+.agents
+.claude
+.codex
+skills-lock.json
+.atomcode
+datalog
+
+# local scaffold/cache
+.npm-cache
+.vben-template
+.corepack
+.codegraph
+.gradle-ai-narration
+.gradle-user-home
+.tmp-chrome-admin
+
+# project runtime data
+storage
+uploads
+media-cache
+ceshi
+apps/backend-api/data
+apps/backend-api/.test-data
+
+# Android local build outputs
+.gradle-android-home*
+apps/android-tv/.gradle-test-home
+apps/android-tv/.gradle
+apps/android-tv/build
+apps/android-tv/app/build
+
+# repository-local machine settings
+.gitconfig
