@@ -728,3 +728,31 @@ CodeGraph 状态：
 后续计划：
 - 修正全量 lint/typecheck 的扫描边界和 Corepack/Turbo 包管理器定位，使提交钩子恢复可用。
 - 配置 Android TV Release 所需 GitHub Secrets 后，执行首次发布流水线并验证 APK、SHA256 和 `latest.json`。
+
+## 20. 2026-06-12 Android TV 1.0 与飞牛 GHCR 部署设计
+
+当前修改目标：
+- 将 Android TV 正式版本更新为 `1.0`，确认远程更新接口与 APK 下载地址。
+- 为飞牛提供无需 GitHub Token 的公开 GHCR 双容器 Compose 安装方案。
+
+当前状态：
+- 已批准公开双镜像设计：
+  - `ghcr.io/zsdd2/jdyk-backend:1.0`
+  - `ghcr.io/zsdd2/jdyk-admin:1.0`
+- 已批准飞牛端口映射：后端 `3999`、管理端 `5200`。
+- 已批准持久化目录：
+  - `./data/backend`
+  - `./data/media-cache`
+  - `./data/releases`
+- 已批准远程更新主地址使用飞牛本地
+  `http://<飞牛IP>:3999/releases/wangri-tv-1.0.apk`，GitHub Release
+  `tv-v1.0` 作为备份来源。
+- 详细设计已写入
+  `docs/superpowers/specs/2026-06-12-android-tv-1.0-feiniu-ghcr-design.md`。
+
+后续计划：
+- 编写逐步实施计划并按 TDD 执行。
+- 更新 Android 版本号并验证签名 release APK。
+- 新增后端与管理端生产镜像、GHCR 多架构发布 workflow。
+- 新增 `docker-compose.feiniu.yml`、环境变量样例和飞牛安装说明。
+- 发布后验证 GHCR 公共拉取、Compose 健康状态以及 TV 从飞牛本地下载升级。
