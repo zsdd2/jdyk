@@ -10,13 +10,14 @@ import {
   Post,
   Put,
   Query,
+  Req,
   Res,
   StreamableFile,
   UnauthorizedException,
 } from '@nestjs/common';
 import { createReadStream, existsSync, statSync } from 'fs';
 import { join, resolve } from 'path';
-import type { Response } from 'express';
+import type { Request, Response } from 'express';
 import type {
   AlbumDetailResponse,
   AlbumListResponse,
@@ -50,6 +51,22 @@ import type {
   PhotoSourceAsset,
 } from './photo-sources/photo-source';
 
+function getRequestProtocol(request?: Request): string {
+  const forwardedProtocol = request?.get('x-forwarded-proto')?.split(',')[0]?.trim();
+  return forwardedProtocol || request?.protocol || 'http';
+}
+
+function getRequestHostname(request?: Request): string {
+  const forwardedHost = request?.get('x-forwarded-host')?.split(',')[0]?.trim();
+  const host = forwardedHost || request?.get('host')?.trim() || 'localhost';
+
+  try {
+    return new URL(`http://${host}`).hostname;
+  } catch {
+    return host.replace(/:\d+$/, '');
+  }
+}
+
 @Controller()
 export class AppController {
   constructor(private readonly appService: AppService) {}
@@ -64,10 +81,12 @@ export class AppController {
   }
 
   @Get()
-  getRoot() {
-    const feiniuHost = process.env.FEINIU_HOST?.trim() || '192.168.10.166';
+  getRoot(@Req() request?: Request) {
+    const protocol = getRequestProtocol(request);
+    const hostname = getRequestHostname(request);
+    const adminPort = process.env.WRJDYK_ADMIN_PUBLIC_PORT?.trim() || '5200';
     return {
-      adminUrl: `http://${feiniuHost}:5200`,
+      adminUrl: `${protocol}://${hostname}:${adminPort}`,
       apiBaseUrl: '/api',
       healthUrl: '/api/health',
       name: 'wangri-zhongxian-backend',
@@ -81,10 +100,20 @@ export class AppController {
   }
 
   @Get('device/app-update/latest')
-  getTvAppUpdateManifest() {
+  getTvAppUpdateManifest(@Req() request?: Request) {
+    const manifest = this.appService.getTvAppUpdateManifest();
+    const protocol = getRequestProtocol(request);
+    const hostname = getRequestHostname(request);
+    const backendPort =
+      process.env.WRJDYK_BACKEND_PUBLIC_PORT?.trim() || '3999';
     return {
       code: 0,
-      data: this.appService.getTvAppUpdateManifest(),
+      data: {
+        ...manifest,
+        apkUrl:
+          manifest.apkUrl ||
+          `${protocol}://${hostname}:${backendPort}/releases/wangri-tv-1.0.apk`,
+      },
     };
   }
 

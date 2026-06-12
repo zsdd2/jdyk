@@ -990,3 +990,23 @@ GHCR 第七次发布跟进：
 - 每次稳定代码合入 `main` 后由 GHCR 自动更新 `latest`。
 - 飞牛侧只拉取最新镜像并重建容器。
 - 如需回滚，临时将 Compose 镜像标签改为明确的历史版本。
+
+## 25. 2026-06-12 Compose 自动发现飞牛宿主机地址
+
+当前修改目标：
+- Compose 不保存飞牛 IP，迁移到其他飞牛环境后无需修改后台或更新地址。
+
+当前状态：
+- 管理端 API 始终使用同源 `/api`，Nginx 通过 Docker 服务名
+  `backend:3999` 自动连接后端。
+- 飞牛相册连接改为 `host.docker.internal`，并通过
+  `host-gateway` 自动映射当前 Docker 宿主机。
+- 后端根状态页根据请求 Host 自动生成管理端地址。
+- TV 更新清单在没有显式 `WRJDYK_TV_UPDATE_APK_URL` 时，根据请求 Host 自动生成 APK
+  下载地址。
+- `.env.feiniu.example` 已移除 `FEINIU_HOST`，只保留端口和飞牛相册凭据。
+
+后续计划：
+- 运行控制器测试、后端构建和 Compose 展开验证。
+- 推送 `main` 更新 `latest` 双镜像。
+- 在飞牛只更新 Compose 和 `.env`，拉取 `latest` 后验证动态地址。

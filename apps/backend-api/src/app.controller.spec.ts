@@ -80,8 +80,14 @@ describe('AppController', () => {
 
   describe('root', () => {
     it('returns deployment entry points from the server root', () => {
-      expect(appController.getRoot()).toEqual({
-        adminUrl: 'http://192.168.10.166:5200',
+      expect(
+        appController.getRoot({
+          get: (name: string) =>
+            name.toLowerCase() === 'host' ? 'nas.example.local:3999' : undefined,
+          protocol: 'http',
+        } as never),
+      ).toEqual({
+        adminUrl: 'http://nas.example.local:5200',
         apiBaseUrl: '/api',
         healthUrl: '/api/health',
         name: 'wangri-zhongxian-backend',
@@ -136,6 +142,25 @@ describe('AppController', () => {
       restoreEnv('WRJDYK_TV_UPDATE_SIZE_BYTES', previousEnv.sizeBytes);
       restoreEnv('WRJDYK_TV_UPDATE_VERSION_CODE', previousEnv.versionCode);
       restoreEnv('WRJDYK_TV_UPDATE_VERSION_NAME', previousEnv.versionName);
+    });
+
+    it('derives the TV APK URL from the incoming host when no override exists', () => {
+      const previousApkUrl = process.env.WRJDYK_TV_UPDATE_APK_URL;
+      delete process.env.WRJDYK_TV_UPDATE_APK_URL;
+
+      try {
+        expect(
+          appController.getTvAppUpdateManifest({
+            get: (name: string) =>
+              name.toLowerCase() === 'host'
+                ? '192.168.50.20:3999'
+                : undefined,
+            protocol: 'http',
+          } as never).data.apkUrl,
+        ).toBe('http://192.168.50.20:3999/releases/wangri-tv-1.0.apk');
+      } finally {
+        restoreEnv('WRJDYK_TV_UPDATE_APK_URL', previousApkUrl);
+      }
     });
 
     it('streams an APK from the configured releases directory', async () => {

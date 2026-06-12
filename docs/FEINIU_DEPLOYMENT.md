@@ -30,8 +30,9 @@ mkdir -p data/backend data/media-cache data/releases
 
 编辑 `.env.feiniu`：
 
-- `FEINIU_HOST` 只填写飞牛局域网 IP 或域名，不含协议和端口。
-- 填写飞牛相册地址、用户名和密码。
+- 一般不需要填写飞牛 IP；后台地址与 APK 地址会根据访问请求自动生成。
+- 填写飞牛相册端口、用户名和密码。
+- 飞牛相册通过 Docker 的 `host.docker.internal` 自动访问当前宿主机。
 - 从 GitHub Release `tv-v1.0` 的 `latest.json` 复制 APK 的 SHA256、大小和发布时间。
 
 下载 Android TV 1.0 APK：
