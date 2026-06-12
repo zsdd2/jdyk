@@ -960,3 +960,14 @@ GHCR 第七次发布跟进：
 - 完成后端测试、生产构建、管理端构建、Nginx/Compose 配置校验。
 - 推送 `main` 并创建 `v1.0.1` 标签，验证两个公开 GHCR 双架构镜像。
 - 飞牛更新 `.env` 后拉取 `1.0.1`，验证根地址、登录和照片源连接。
+
+发布验证：
+- 提交 `151efc5` 已推送，标签 `v1.0.1` 已创建并推送。
+- GitHub Actions `27395181595` 整体成功，管理端与后端镜像任务均通过。
+- 匿名 GHCR Registry API 验证：
+  - `ghcr.io/zsdd2/jdyk-admin:1.0.1`：HTTP 200，包含 amd64/arm64。
+  - `ghcr.io/zsdd2/jdyk-backend:1.0.1`：HTTP 200，包含 amd64/arm64。
+- 本地临时服务真实 HTTP 验证：
+  - `/` 返回状态、`/api`、`/api/health` 与 `192.168.10.166:5200` 入口。
+  - `/api/health` 返回 200。
+- 飞牛现网旧版本仍需将 `.env` 的 `JDYK_VERSION` 改为 `1.0.1` 后重新拉取启动。
