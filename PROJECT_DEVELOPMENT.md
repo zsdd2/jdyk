@@ -1314,6 +1314,19 @@ GHCR 第七次发布跟进：
 - 使用 `scripts/release/verify-local-release.ps1` 固化本地验证流程，避免重复尝试错误的前端/Android 构建命令。
 - 使用 `scripts/release/README.md` 作为后台/管理端推送、TV tag 发布、正式 APK 下载和升级接口回测的固定 checklist。
 - 本地发布脚本已验证可执行；脚本额外固定了仓库内 `.docker-config` 和 `ANDROID_USER_HOME`，避免反复触发用户目录权限错误。
-- 提交并推送 `main`，再推送 `tv-v1.0.2` 标签。
-- 等待 GHCR 与 Android TV Release 工作流完成，下载正式 APK 到本地并复核 SHA256、大小、版本和签名。
-- 使用正式 APK 验证后台上传接口、`/api/device/app-update/latest` 和 APK 下载链路。
+- 主发布提交 `b998816` 已推送到 `main`，`tv-v1.0.2` 标签已推送。
+- Android TV Release run `27431792432` 已成功，GitHub Release 正式 APK 已下载到
+  `apps/android-tv/build/release/wangri-tv-1.0.2.apk`。
+- 正式 APK manifest 复核通过：`versionCode 7`、`versionName 1.0.2`、大小 `8632035`
+  bytes、SHA256 `2eb17780ddfc5b709a3b23b42d11f8475d05366dcf6f0485ea31f8e08b2d152c`。
+- 正式 APK 签名验证通过，证书 SHA-256 指纹为
+  `B8:8D:6F:AC:90:14:FA:4E:70:2D:AA:BC:E0:D2:58:00:46:AE:9E:6D:0B:16:91:41:2D:36:E0:FB:ED:3C:E9:AA`。
+- 使用正式 APK 验证本地后台上传接口通过，`/api/device/app-update/latest` 返回 `7 / 1.0.2`，
+  下载 URL 返回 `application/vnd.android.package-archive`，下载文件大小和 SHA256 与 manifest 一致。
+- GHCR run `27431784268` 中 `Publish admin` 成功，`Publish backend` 失败于
+  `docker/build-push-action` 的 layer 上传阶段：`error writing layer blob: not_found`，不是本地代码构建失败。
+
+后续修改计划：
+- 通过文档进度提交重触发 GHCR `1.0.5/latest` 后台镜像发布。
+- 新 GHCR run 完成后，验证 `jdyk-admin:1.0.5`、`jdyk-backend:1.0.5` 与 `latest` 的多架构 manifest。
+- 若后台 Buildx 再次失败，再只调整 GHCR backend 构建/缓存策略，不改 TV Release。
