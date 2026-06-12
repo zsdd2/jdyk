@@ -1371,3 +1371,34 @@ GHCR 第七次发布跟进：
 - 如需正式 GitHub 发布，再提交并推送 `main`，创建并推送 `tv-v1.0.3` tag，触发 GitHub Android TV Release workflow。
 - 字体形态目前依赖系统 Serif/Cursive fallback；若要完全贴合 `Source Han Serif SC` 与 `Ma Shan Zheng/Zhi Mang Xing/LXGW WenKai`，后续需要把字体文件加入 Android TV 资源并显式加载。
 - 后续增加多模板时，在当前固定模板基础上扩展模板枚举和随机策略，不再把 AI 版式建议直接作为播放器布局输入。
+
+## 37. 2026-06-13 管理端关于页版本号与通用 latest Compose
+
+当前修改目标：
+- 在后台管理端“关于”页面下方显示当前后台/管理端发布版本号。
+- 将后台/管理端 GHCR 固定版本从 `1.0.5` 提升到 `1.0.6`，用于触发 GitHub 镜像发布测试。
+- 新增一个通用 Compose 文件，每次启动时跟随并拉取 `latest` 镜像，不依赖飞牛固定 `/vol1/...` 路径。
+
+当前状态：
+- 管理端新增 `VITE_ADMIN_RELEASE_VERSION=1.0.6`，避免与 Vben 模板插件注入的 `VITE_APP_VERSION=5.7.0` 冲突。
+- “关于”页面已在通用 Vben About 内容下方追加 `当前版本号：1.0.6`。
+- GHCR workflow 固定版本标签已改为 `1.0.6`，`latest` 仍在 `main` 分支发布时同步更新。
+- 新增 `docker-compose.latest.yml`：后端和管理端均使用 `ghcr.io/zsdd2/...:latest`，并设置 `pull_policy: always`；数据、媒体缓存和 releases 使用 Docker 命名卷。
+- 发布脚本已增加 `VITE_ADMIN_RELEASE_VERSION` 检查，并同时验证 `docker-compose.feiniu.yml` 与 `docker-compose.latest.yml` 的展开配置。
+- 飞牛部署文档已更新到 Android TV `1.0.3 / versionCode 8`，并补充通用 latest Compose 用法。
+- 修复 `TV 版本管理` 页面上传 APK 返回 `Bad Request` 的问题：前端上传接口改为使用项目统一的 `requestClient.upload()`，不再把 `FormData` 直接交给默认 JSON 请求客户端。
+
+验证：
+- 已用 `curl -F` 对本地后端上传 `wangri-tv-1.0.3-github-download-check.apk`，接口返回 201，确认后端和 APK 文件本身可用。
+- `vitest run src/api/photo-library-tv-release.spec.ts src/app-version.spec.ts src/preferences.spec.ts src/router/photo-library-routes.spec.ts`：通过，4 个测试文件 / 5 个用例。
+- `corepack pnpm -F @vben/web-antd run typecheck`：通过。
+- `vite build --mode production`：通过。
+- 生产产物 `about-*.js` 已确认包含 `VITE_ADMIN_RELEASE_VERSION: 1.0.6`，页面会显示 `当前版本号：1.0.6`。
+- `docker compose -f docker-compose.feiniu.yml config`：通过。
+- `docker compose -f docker-compose.latest.yml config`：通过。
+- 浏览器访问 `http://127.0.0.1:5200/photo-library/tv-release`：页面正常显示 `TV 版本管理` 和上传按钮，控制台无 error。
+
+后续修改计划：
+- 提交并推送 `main`，触发 GHCR 发布 `jdyk-admin:1.0.6`、`jdyk-backend:1.0.6` 和新的 `latest`。
+- GitHub Actions 完成后，验证两个镜像的 `1.0.6/latest` 多架构 manifest。
+- 飞牛侧使用 `docker compose pull && docker compose up -d --force-recreate`，或通用 Compose 使用 `docker compose -f docker-compose.latest.yml up -d` 拉取最新管理端。

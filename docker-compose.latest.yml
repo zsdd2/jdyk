@@ -1,0 +1,95 @@
+name: jdyk
+
+services:
+  backend:
+    image: ghcr.io/zsdd2/jdyk-backend:latest
+    pull_policy: always
+    container_name: jdyk-backend
+    restart: unless-stopped
+    init: true
+    environment:
+      PORT: 3999
+      WRJDYK_ADMIN_PUBLIC_PORT: ${WRJDYK_ADMIN_PUBLIC_PORT:-5200}
+      WRJDYK_BACKEND_PUBLIC_PORT: ${WRJDYK_BACKEND_PUBLIC_PORT:-3999}
+      WRJDYK_PHOTO_SOURCE: ${WRJDYK_PHOTO_SOURCE:-feiniu}
+      WRJDYK_FEINIU_BASE_URL: ${WRJDYK_FEINIU_BASE_URL:-}
+      WRJDYK_FEINIU_USERNAME: ${WRJDYK_FEINIU_USERNAME:-}
+      WRJDYK_FEINIU_PASSWORD: ${WRJDYK_FEINIU_PASSWORD:-}
+      WRJDYK_RELEASES_DIR: /workspace/releases
+      WRJDYK_TV_UPDATE_VERSION_CODE: ${WRJDYK_TV_UPDATE_VERSION_CODE:-8}
+      WRJDYK_TV_UPDATE_VERSION_NAME: ${WRJDYK_TV_UPDATE_VERSION_NAME:-1.0.3}
+      WRJDYK_TV_UPDATE_APK_URL: ${WRJDYK_TV_UPDATE_APK_URL:-}
+      WRJDYK_TV_UPDATE_SHA256: ${WRJDYK_TV_UPDATE_SHA256:-}
+      WRJDYK_TV_UPDATE_SIZE_BYTES: ${WRJDYK_TV_UPDATE_SIZE_BYTES:-}
+      WRJDYK_TV_UPDATE_FORCE: ${WRJDYK_TV_UPDATE_FORCE:-false}
+      WRJDYK_TV_UPDATE_NOTES: ${WRJDYK_TV_UPDATE_NOTES:-Android TV 1.0.3}
+      WRJDYK_TV_UPDATE_PUBLISHED_AT: ${WRJDYK_TV_UPDATE_PUBLISHED_AT:-}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    ports:
+      - "${WRJDYK_BACKEND_PUBLIC_PORT:-3999}:3999"
+    volumes:
+      - jdyk-backend-data:/workspace/apps/backend-api/data
+      - jdyk-media-cache:/workspace/media-cache
+      - jdyk-releases:/workspace/releases
+    networks:
+      - jdyk
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - fetch('http://127.0.0.1:3999/api/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: "3"
+
+  admin:
+    image: ghcr.io/zsdd2/jdyk-admin:latest
+    pull_policy: always
+    container_name: jdyk-admin
+    restart: unless-stopped
+    read_only: true
+    tmpfs:
+      - /var/cache/nginx
+      - /var/run
+    depends_on:
+      backend:
+        condition: service_healthy
+    ports:
+      - "${WRJDYK_ADMIN_PUBLIC_PORT:-5200}:8080"
+    networks:
+      - jdyk
+    healthcheck:
+      test:
+        - CMD
+        - wget
+        - -q
+        - -O
+        - /dev/null
+        - http://127.0.0.1:8080/healthz
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: "3"
+
+networks:
+  jdyk:
+    name: jdyk
+    driver: bridge
+
+volumes:
+  jdyk-backend-data:
+  jdyk-media-cache:
+  jdyk-releases:

@@ -1,5 +1,5 @@
 param(
-  [string] $ImageVersion = '1.0.5',
+  [string] $ImageVersion = '1.0.6',
   [int] $TvVersionCode = 8,
   [string] $TvVersionName = '1.0.3',
   [string] $JavaHome = 'F:\Java\OpenJDK17U-jdk_x64_windows_hotspot_17.0.19_10\jdk-17.0.19+10',
@@ -39,6 +39,7 @@ function Assert-FileContains {
 
 Invoke-Step 'check version surfaces' {
   Assert-FileContains '.github/workflows/ghcr-images.yml' "type=raw,value=$ImageVersion" "GHCR image version is not $ImageVersion"
+  Assert-FileContains 'apps/web-antd/.env.production' "VITE_ADMIN_RELEASE_VERSION=$ImageVersion" "Admin app release version is not $ImageVersion"
   Assert-FileContains 'apps/android-tv/app/build.gradle' "versionCode $TvVersionCode" "TV versionCode is not $TvVersionCode"
   Assert-FileContains 'apps/android-tv/app/build.gradle' "versionName '$TvVersionName'" "TV versionName is not $TvVersionName"
   Assert-FileContains 'docker-compose.feiniu.yml' "WRJDYK_TV_UPDATE_VERSION_CODE:-$TvVersionCode" "Compose default TV versionCode is not $TvVersionCode"
@@ -56,7 +57,7 @@ Invoke-Step 'backend focused tests' {
 Invoke-Step 'web focused tests' {
   Push-Location apps/web-antd
   try {
-    ..\..\node_modules\.bin\vitest.CMD run src/preferences.spec.ts src/router/photo-library-routes.spec.ts
+    ..\..\node_modules\.bin\vitest.CMD run src/app-version.spec.ts src/api/photo-library-tv-release.spec.ts src/preferences.spec.ts src/router/photo-library-routes.spec.ts
   } finally {
     Pop-Location
   }
@@ -84,6 +85,7 @@ Invoke-Step 'compose config expansion' {
   New-Item -ItemType Directory -Force -Path $dockerConfig | Out-Null
   $env:DOCKER_CONFIG = $dockerConfig
   docker compose -f docker-compose.feiniu.yml config
+  docker compose -f docker-compose.latest.yml config
 }
 
 Invoke-Step 'android debug and release build' {

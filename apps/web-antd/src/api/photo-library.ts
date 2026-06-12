@@ -334,6 +334,14 @@ export interface TvReleaseInfo {
   releasesDirectory: string;
 }
 
+export interface UploadTvReleasePackageInput {
+  file: Blob | File;
+  forceUpdate: boolean;
+  releaseNotes: string;
+  versionCode: number;
+  versionName: string;
+}
+
 export interface PhotoSourceConfig {
   activeSourceId: string;
   feiniu: FeiniuRuntimeConfig;
@@ -462,10 +470,10 @@ export function getTvReleaseInfoApi() {
   return requestClient.get<TvReleaseInfo>('/admin/photo-library/tv-release');
 }
 
-export function uploadTvReleasePackageApi(formData: FormData) {
-  return requestClient.post<TvReleaseInfo>(
+export function uploadTvReleasePackageApi(input: UploadTvReleasePackageInput) {
+  return requestClient.upload<TvReleaseInfo>(
     '/admin/photo-library/tv-release/upload',
-    formData,
+    input,
   );
 }
 

@@ -15,8 +15,8 @@ Run the fixed local verification path:
 
 ```powershell
 .\scripts\release\verify-local-release.ps1 `
-  -ImageVersion 1.0.5 `
-  -TvVersionCode 7 `
+  -ImageVersion 1.0.6 `
+  -TvVersionCode 8 `
   -TvVersionName 1.0.3
 ```
 
@@ -24,6 +24,7 @@ Important constraints:
 
 - Keep `ANDROID_USER_HOME` inside the repo. Do not let Android tools write to `C:\Android\.android` or the locked user profile.
 - Keep Docker config inside `.docker-config` for local `docker compose config`; do not depend on `C:\Users\Administrator\.docker\config.json`.
+- `docker-compose.latest.yml` is the generic latest-tracking compose. It uses named volumes and `pull_policy: always`.
 - Run web Vitest from `apps/web-antd` with `..\..\node_modules\.bin\vitest.CMD`.
 - Run Vite production build from `apps/web-antd` with `..\..\node_modules\.bin\vite.CMD`.
 - Treat `app-release-unsigned.apk` as compile evidence only. Never publish it for remote update.
@@ -33,15 +34,15 @@ Important constraints:
 ```powershell
 git status --short
 git add .
-git commit -m "Release backend 1.0.5 and TV 1.0.3"
+git commit -m "Release backend 1.0.6 and TV 1.0.3"
 git push origin main
 ```
 
 The main push publishes:
 
-- `ghcr.io/zsdd2/jdyk-backend:1.0.5`
+- `ghcr.io/zsdd2/jdyk-backend:1.0.6`
 - `ghcr.io/zsdd2/jdyk-backend:latest`
-- `ghcr.io/zsdd2/jdyk-admin:1.0.5`
+- `ghcr.io/zsdd2/jdyk-admin:1.0.6`
 - `ghcr.io/zsdd2/jdyk-admin:latest`
 
 ## 4. Publish Android TV
@@ -82,6 +83,12 @@ On Feiniu, pull the new `latest` images and recreate containers:
 ```sh
 docker compose --env-file .env.feiniu -f docker-compose.feiniu.yml pull
 docker compose --env-file .env.feiniu -f docker-compose.feiniu.yml up -d --force-recreate
+```
+
+For a generic install that should pull `latest` on every `up`, use:
+
+```sh
+docker compose -f docker-compose.latest.yml up -d
 ```
 
 Then upload or place the signed TV APK and verify the TV device can download, hash-check, and open the system installer.

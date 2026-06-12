@@ -51,6 +51,7 @@ versionName '1.0.2'
 然后同步以下文件中的远程更新默认值和说明：
 
 - `docker-compose.feiniu.yml`
+- `docker-compose.latest.yml`
 - `.env.feiniu.example`
 - `apps/android-tv/README.md`
 - `docs/FEINIU_DEPLOYMENT.md`
@@ -69,6 +70,7 @@ corepack pnpm -F @vben/web-antd run typecheck
 apps\web-antd\node_modules\.bin\vite.CMD build --mode production
 node --test scripts/android-tv/generate-update-manifest.test.mjs
 docker compose -f docker-compose.feiniu.yml config
+docker compose -f docker-compose.latest.yml config
 ```
 
 ### Android TV

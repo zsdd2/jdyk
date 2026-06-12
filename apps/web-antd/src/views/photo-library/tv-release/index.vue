@@ -71,16 +71,15 @@ async function uploadRelease() {
     return;
   }
 
-  const formData = new FormData();
-  formData.append('file', apkFile);
-  formData.append('versionName', form.versionName.trim());
-  formData.append('versionCode', String(form.versionCode));
-  formData.append('releaseNotes', form.releaseNotes.trim());
-  formData.append('forceUpdate', String(form.forceUpdate));
-
   uploading.value = true;
   try {
-    releaseInfo.value = await uploadTvReleasePackageApi(formData);
+    releaseInfo.value = await uploadTvReleasePackageApi({
+      file: apkFile,
+      forceUpdate: form.forceUpdate,
+      releaseNotes: form.releaseNotes.trim(),
+      versionCode: form.versionCode,
+      versionName: form.versionName.trim(),
+    });
     fileList.value = [];
     message.success('TV 升级包已上传并设为最新版本');
   } finally {
