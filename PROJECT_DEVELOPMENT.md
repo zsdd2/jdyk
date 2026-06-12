@@ -913,3 +913,22 @@ GHCR 第七次发布跟进：
 - 在飞牛复制 `.env.feiniu.example` 为 `.env`，填写实际飞牛 IP 后启动 Compose。
 - 配置 Android 长期签名 Secret 并发布 `tv-v1.0` 签名 APK。
 - 将签名 APK 放入飞牛 `./data/releases/wangri-tv-1.0.apk`，完成真实 TV 远程升级验收。
+
+## 22. 2026-06-12 飞牛固定目录 Compose
+
+当前修改目标：
+- 将飞牛安装目录固定为 `/vol1/1000/docker/jdyk`，提供可直接粘贴部署的完整 Compose。
+
+当前状态：
+- 后端数据库、媒体缓存和 APK 发布目录已改为绝对路径：
+  - `/vol1/1000/docker/jdyk/data/backend`
+  - `/vol1/1000/docker/jdyk/data/media-cache`
+  - `/vol1/1000/docker/jdyk/data/releases`
+- 管理端与后端使用独立 `jdyk` bridge 网络。
+- 两个容器均启用日志轮转，单文件 10 MB，最多保留 3 个文件。
+- 管理端启用只读根文件系统，并为 Nginx 缓存和运行目录配置 tmpfs。
+
+后续计划：
+- 在飞牛创建安装目录和三个数据目录，写入 Compose 与 `.env`。
+- 填写飞牛实际 IP、飞牛相册地址和凭据后执行拉取与启动。
+- 放入正式签名 APK 后验证健康检查、管理后台和 TV 更新接口。
