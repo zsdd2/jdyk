@@ -30,6 +30,28 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Set up pnpm
+        if: matrix.name == 'admin'
+        uses: pnpm/action-setup@v4
+        with:
+          version: 11.5.0
+
+      - name: Set up Node.js
+        if: matrix.name == 'admin'
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22.18.0
+          cache: pnpm
+
+      - name: Install admin dependencies
+        if: matrix.name == 'admin'
+        run: pnpm install --frozen-lockfile --ignore-scripts
+
+      - name: Build admin assets
+        if: matrix.name == 'admin'
+        working-directory: apps/web-antd
+        run: ../../node_modules/.bin/vite build --mode production
+
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
 

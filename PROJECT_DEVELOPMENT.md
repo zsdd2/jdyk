@@ -861,3 +861,13 @@ GHCR 第三次发布跟进：
 - Dockerfile 已改为在应用目录显式调用
   `../../node_modules/.bin/vite build --mode production`，消除嵌套 pnpm 调用并匹配
   pnpm 实际安装布局。
+
+GHCR 第四次发布跟进：
+- 管理端即使直接调用根工作区 Vite，仍在 Buildx 容器构建阶段失败；本地等价命令生产
+  构建通过。
+- 管理端发布结构已调整为：GitHub 原生 runner 安装依赖并生成
+  `apps/web-antd/dist`，Buildx 仅将静态产物封装进 Nginx amd64/arm64 镜像。
+- `deploy/admin.Dockerfile` 已简化为纯 Nginx 运行镜像，`.dockerignore` 仅放行
+  `apps/web-antd/dist`，后端镜像构建路径不变。
+- 该拆分避免在 Buildx/QEMU 上重复执行大型前端编译，并把依赖安装、前端构建和镜像封装
+  分成可独立定位的步骤。
