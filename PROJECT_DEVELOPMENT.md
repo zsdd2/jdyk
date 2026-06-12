@@ -1181,3 +1181,6 @@ GHCR 第七次发布跟进：
 - `latest.json` 的版本、大小和 SHA256 已与下载后的 APK 独立复核一致。
 - 正式 APK 签名证书指纹与旧版完全一致，可在当前设备上直接覆盖安装。
 - 后续发布的 `feiniu-update.env` 将保持 `WRJDYK_TV_UPDATE_APK_URL` 为空，由后端按请求 Host 动态生成本地 APK 地址，不再依赖 `FEINIU_HOST`。
+- GitHub Release 中的 `feiniu-update.env` 已手动覆盖为动态地址版本，当前资产不再包含 `FEINIU_HOST` 占位符。
+- GHCR Actions `27422893414` 已成功完成管理端和后端发布；匿名 `docker manifest inspect` 确认 `latest` 与 `1.0.4` 均包含 `linux/amd64`、`linux/arm64`。
+- 从当前开发机访问 `192.168.10.166:3999` 失败，因此飞牛容器更新接口和电视端安装仍需在飞牛恢复可访问后由用户现场验收。
