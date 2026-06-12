@@ -172,6 +172,8 @@ curl -fL \
 - `WRJDYK_TV_UPDATE_NOTES`
 - `WRJDYK_TV_UPDATE_PUBLISHED_AT`
 
+`WRJDYK_TV_UPDATE_APK_URL` 保持为空，后端会根据电视实际访问的飞牛地址动态生成本地 APK URL，不需要配置固定飞牛 IP。
+
 修改环境变量后再次执行 `up -d --force-recreate`，否则旧容器不会读取新值。
 
 ## 7. 发布后验证

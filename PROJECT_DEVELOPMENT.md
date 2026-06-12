@@ -1173,3 +1173,11 @@ GHCR 第七次发布跟进：
 - 提交并推送完整 Gradle Wrapper 文件。
 - 将尚未成功发布的 `tv-v1.0.1` 标签移动到 Wrapper 修复提交并重新触发工作流。
 - 验证 GitHub Release 的签名 APK、更新 manifest、证书指纹和下载地址。
+
+发布结果：
+- GitHub Actions `27422904628` 已成功完成签名构建、manifest 生成、`apksigner` 校验、构建产物上传和 GitHub Release 发布。
+- GitHub Release：`https://github.com/zsdd2/jdyk/releases/tag/tv-v1.0.1`。
+- 正式 APK：`wangri-tv-1.0.1.apk`，大小 `8632029` 字节，SHA256 `45ba34628953ffd2651301c19b87f151127f3c29cfcf88c80c8a541b390db461`。
+- `latest.json` 的版本、大小和 SHA256 已与下载后的 APK 独立复核一致。
+- 正式 APK 签名证书指纹与旧版完全一致，可在当前设备上直接覆盖安装。
+- 后续发布的 `feiniu-update.env` 将保持 `WRJDYK_TV_UPDATE_APK_URL` 为空，由后端按请求 Host 动态生成本地 APK 地址，不再依赖 `FEINIU_HOST`。
