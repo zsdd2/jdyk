@@ -195,7 +195,7 @@ export class AppController {
       data: {
         avatar: '',
         desc: '往日重现本地管理后台',
-        homePath: '/dashboard/analytics',
+        homePath: '/analytics',
         realName: '往日重现管理员',
         roles: ['admin'],
         token: 'wrjdyk_admin_admin',
@@ -305,6 +305,16 @@ export class AppController {
               path: '/photo-library/sources',
             },
           ],
+        },
+        {
+          component: '/_core/profile/index',
+          meta: {
+            hideInMenu: true,
+            icon: 'lucide:user',
+            title: '个人中心',
+          },
+          name: 'Profile',
+          path: '/profile',
         },
       ],
     };

@@ -537,23 +537,37 @@ interface TvDeviceRow {
   updated_at: string;
 }
 
-const currentSchemaVersion = 14;
+const currentSchemaVersion = 15;
+
+const defaultBusinessVisionPrompt = [
+  '按家庭记忆价值、人物情绪、清晰度、构图光影和电视大屏可观看性综合评分。账单、截图、模糊测试图、纯黑纯白图直接低分或标记废片；人物自然、家庭事件、开心瞬间、特殊场景应提高 memory_score。',
+  '为家庭电视播放写 2-3 行温暖、克制、有停顿感的中文旁白，总字数 10-25 字。文字像家人轻声回忆，不像广告标题；避免照片文件名、相册名和夸张形容。',
+  '识别照片中的主要类型和氛围，返回 3-6 个适合家庭影像分拣和推送优先级的中文标签。优先使用人物、开心、场景、旅行、聚会、纪念日、亲子、合影、美食、宠物、旧照片、生活瞬间。',
+  '分析 16:9 电视画布中的安全文字区。文字必须避开人脸、人物主体和高信息区域；优先落在留白、暗部、背景简单区域或可加渐变遮罩区域。输出 position、safe_area、text_color、font_style。',
+].join('\n\n');
+
+const defaultOutputContractPrompt = [
+  '最终只能输出一个可被 JSON.parse 直接解析的 JSON 对象；不要 Markdown、代码块、Python、工具调用、search(...)、Result、过程说明或额外文字。',
+  '必须返回 schema_version: "photo_tv_payload_v1"。',
+  '必须包含 photo_analysis.caption、classification、scores、narration_options、selected_narration_index、layout_plan。',
+  'photo_analysis.caption 为 100-200 字中文画面描述，直接描述真实可见内容，不要根据文件名或相册名编造。',
+  'classification 必须包含 category、scene_tags、tv_suitability；scene_tags 返回 3-6 个中文标签，tv_suitability 只能为 high、medium、low。',
+  'scores 必须包含 memory_score、beauty_score、is_trash、reason；memory_score 和 beauty_score 为 0-100 数字，reason 不超过 80 字。',
+  'narration_options 必须返回 5 组不同的三段式旁白，每组包含 scene_line、handwritten_line、closing_line；selected_narration_index 为 0-4 的整数。',
+  'layout_plan 必须包含 position、safe_area、text_color、font_style；safe_area 使用 0-1 归一化 {x,y,w,h}，text_color 只能是 #FFFFFF 或 #000000，font_style 只能是 handwriting、sans-serif、serif。',
+].join('\n');
 
 const defaultAiSettings = {
   aiCheckIntervalMinutes: 60,
   dailyAiLimit: 100,
   baseUrl: '',
-  classificationPrompt:
-    '识别照片中的主要类型和氛围，返回 3-6 个适合家庭影像分拣和推送优先级的中文标签。优先使用人物、开心、场景、旅行、聚会、纪念日、亲子、合影、美食、宠物、旧照片、生活瞬间。',
-  commentPrompt:
-    '为家庭电视播放写 2-3 行温暖、克制、有停顿感的中文旁白，总字数 10-25 字。文字像家人轻声回忆，不像广告标题；避免照片文件名、相册名和夸张形容。',
-  layoutPrompt:
-    '分析 16:9 电视画布中的安全文字区。文字必须避开人脸、人物主体和高信息区域；优先落在留白、暗部、背景简单区域或可加渐变遮罩区域。输出 position、safe_area、text_color、font_style。',
+  classificationPrompt: '',
+  commentPrompt: '',
+  layoutPrompt: '',
   model: 'gpt-4o-mini',
-  outputContractPrompt: '',
+  outputContractPrompt: defaultOutputContractPrompt,
   provider: 'openai_compatible' satisfies AiSettingsProvider,
-  scoringPrompt:
-    '按家庭记忆价值、人物情绪、清晰度、构图光影和电视大屏可观看性综合评分。账单、截图、模糊测试图、纯黑纯白图直接低分或标记废片；人物自然、家庭事件、开心瞬间、特殊场景应提高 memory_score。',
+  scoringPrompt: defaultBusinessVisionPrompt,
 };
 
 const realPhotoFiles = [
@@ -799,9 +813,10 @@ export class SqlitePhotoRepository {
     const database = this.getDatabase();
 
     this.applyMigrations();
+    this.cleanupMissingSeedPhotos();
 
     const count = database.prepare('SELECT COUNT(*) AS count FROM photos').get() as { count: number };
-    if (count.count === 0) {
+    if (count.count === 0 && this.hasSeedPhotoFiles()) {
       this.seedCeshiPhotos();
     }
   }
@@ -3226,11 +3241,93 @@ export class SqlitePhotoRepository {
           .prepare('INSERT INTO schema_migrations (version, name) VALUES (?, ?)')
           .run(14, 'ai_output_contract_prompt');
       }
+      if (row.version < 15) {
+        addColumnIfMissing(
+          database,
+          'ai_settings',
+          'output_contract_prompt',
+          "TEXT NOT NULL DEFAULT ''",
+        );
+        database
+          .prepare(
+            `
+              UPDATE ai_settings
+              SET output_contract_prompt = ?
+              WHERE id = 1 AND TRIM(output_contract_prompt) = ''
+            `,
+          )
+          .run(defaultAiSettings.outputContractPrompt);
+        database
+          .prepare('INSERT INTO schema_migrations (version, name) VALUES (?, ?)')
+          .run(15, 'default_ai_output_contract_prompt');
+      }
       database.exec('COMMIT');
     } catch (error) {
       database.exec('ROLLBACK');
       throw error;
     }
+  }
+
+  private cleanupMissingSeedPhotos(): number {
+    const database = this.getDatabase();
+    const rows = database
+      .prepare(
+        `
+          SELECT photo_id, filename
+          FROM photos
+          WHERE source_type = 'local'
+            AND photo_id GLOB 'p_[0-9][0-9][0-9]'
+        `,
+      )
+      .all() as unknown as Array<{ filename: string; photo_id: string }>;
+    const missingRows = rows.filter(
+      (row) =>
+        realPhotoFiles.includes(row.filename) &&
+        !existsSync(join(this.photoRoot, row.filename)),
+    );
+    if (missingRows.length === 0) return 0;
+
+    database.exec('BEGIN');
+    try {
+      const deletePlaybackAlbumPhoto = database.prepare(
+        'DELETE FROM playback_album_photos WHERE photo_id = ?',
+      );
+      const deleteAlbumPhoto = database.prepare(
+        'DELETE FROM album_photos WHERE photo_id = ?',
+      );
+      const deletePhoto = database.prepare(
+        'DELETE FROM photos WHERE photo_id = ?',
+      );
+      for (const row of missingRows) {
+        deletePlaybackAlbumPhoto.run(row.photo_id);
+        deleteAlbumPhoto.run(row.photo_id);
+        deletePhoto.run(row.photo_id);
+      }
+      const deleteEmptySeedAlbum = database.prepare(
+        `
+          DELETE FROM albums
+          WHERE album_id = ?
+            AND NOT EXISTS (
+              SELECT 1 FROM album_photos WHERE album_photos.album_id = albums.album_id
+            )
+        `,
+      );
+      for (const album of sampleAlbumDefinitions) {
+        deleteEmptySeedAlbum.run(album.albumId);
+      }
+      database.exec('COMMIT');
+    } catch (error) {
+      database.exec('ROLLBACK');
+      throw error;
+    }
+
+    return missingRows.length;
+  }
+
+  private hasSeedPhotoFiles(): boolean {
+    return realPhotoFiles.every((filename) =>
+      existsSync(join(this.photoRoot, filename)),
+    );
   }
 
   private getPhotoRow(photoId: string): PhotoRow | null {
@@ -3781,7 +3878,7 @@ function rowToAiSettings(row: AiSettingsRow): AiSettings {
     model: row.model,
     outputContractPrompt: row.output_contract_prompt || defaultAiSettings.outputContractPrompt,
     provider: normalizeAiProvider(row.provider, defaultAiSettings.provider),
-    scoringPrompt: row.scoring_prompt,
+    scoringPrompt: row.scoring_prompt || defaultAiSettings.scoringPrompt,
     updatedAt: row.updated_at,
   };
 }

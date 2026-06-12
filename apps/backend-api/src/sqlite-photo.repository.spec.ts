@@ -151,10 +151,31 @@ describe('SqlitePhotoRepository', () => {
           name: 'ai_output_contract_prompt',
           version: 14,
         },
+        {
+          name: 'default_ai_output_contract_prompt',
+          version: 15,
+        },
       ]);
     } finally {
       database.close();
     }
+  });
+
+  it('does not seed demo photo records when the demo files are missing', () => {
+    const emptyPhotoRoot = join(testDataDir, 'empty-photo-root');
+    mkdirSync(emptyPhotoRoot, { recursive: true });
+    repository = new SqlitePhotoRepository({
+      databasePath,
+      photoRoot: emptyPhotoRoot,
+    });
+
+    repository.initialize();
+
+    expect(repository.listPhotoCenterItems({ page: 1, pageSize: 20 })).toMatchObject({
+      items: [],
+      total: 0,
+    });
+    expect(repository.listAlbums()).toEqual([]);
   });
 
   it('persists a separate AI output contract prompt', () => {
@@ -174,6 +195,21 @@ describe('SqlitePhotoRepository', () => {
     expect(repository.getAiRuntimeSettings().outputContractPrompt).toBe(
       '必须返回 scores、narration_options 和 layout_plan。',
     );
+  });
+
+  it('provides the standard AI output contract by default', () => {
+    repository = new SqlitePhotoRepository({
+      databasePath,
+      photoRoot,
+    });
+
+    repository.initialize();
+    const settings = repository.getAiSettings();
+
+    expect(settings.scoringPrompt).toContain('按家庭记忆价值');
+    expect(settings.outputContractPrompt).toContain('photo_tv_payload_v1');
+    expect(settings.outputContractPrompt).toContain('narration_options');
+    expect(settings.outputContractPrompt).toContain('layout_plan');
   });
 
   it('persists AI recognition task progress across repository instances', () => {

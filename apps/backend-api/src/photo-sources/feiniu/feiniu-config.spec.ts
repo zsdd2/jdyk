@@ -58,4 +58,25 @@ describe('feiniu config', () => {
       ok: false,
     });
   });
+
+  it('does not fall back to runtime Feiniu values when the test form is blank', async () => {
+    const result = await testFeiniuConnectivity(
+      {
+        baseUrl: '',
+        password: '',
+        useConfiguredPassword: false,
+        username: '',
+      },
+      {
+        WRJDYK_FEINIU_BASE_URL: 'http://nas.local',
+        WRJDYK_FEINIU_PASSWORD: 'secret',
+        WRJDYK_FEINIU_USERNAME: 'alice',
+      },
+    );
+
+    expect(result).toMatchObject({
+      missingFields: ['baseUrl', 'username', 'password'],
+      ok: false,
+    });
+  });
 });

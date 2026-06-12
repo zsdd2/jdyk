@@ -58,10 +58,10 @@ async function loadConfig() {
   loading.value = true;
   try {
     sourceConfig.value = await getPhotoSourceConfigApi();
-    feiniuForm.value.baseUrl = sourceConfig.value.feiniu.baseUrl ?? '';
-    feiniuForm.value.username = sourceConfig.value.feiniu.username ?? '';
-    feiniuForm.value.useConfiguredPassword =
-      sourceConfig.value.feiniu.passwordConfigured;
+    feiniuForm.value.baseUrl = '';
+    feiniuForm.value.username = '';
+    feiniuForm.value.password = '';
+    feiniuForm.value.useConfiguredPassword = false;
   } finally {
     loading.value = false;
   }
@@ -147,7 +147,7 @@ onMounted(loadConfig);
         <Space class="feiniu-form" direction="vertical" size="middle">
           <Input
             v-model:value="feiniuForm.baseUrl"
-            placeholder="飞牛 NAS 地址，例如 http://192.168.10.166:60000"
+            placeholder="飞牛 NAS 地址"
           />
           <Input v-model:value="feiniuForm.username" placeholder="飞牛账号" />
           <Input

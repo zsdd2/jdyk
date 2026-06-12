@@ -67,8 +67,14 @@ export async function testFeiniuConnectivity(
   env: Record<string, string | undefined> = process.env,
   dependencies: FeiniuConnectivityDependencies = {},
 ): Promise<FeiniuConnectivityResult> {
-  const baseUrl = input.baseUrl?.trim() || env.WRJDYK_FEINIU_BASE_URL?.trim();
-  const username = input.username?.trim() || env.WRJDYK_FEINIU_USERNAME?.trim();
+  const inputHasBaseUrl = Object.prototype.hasOwnProperty.call(input, 'baseUrl');
+  const inputHasUsername = Object.prototype.hasOwnProperty.call(input, 'username');
+  const baseUrl = inputHasBaseUrl
+    ? input.baseUrl?.trim()
+    : env.WRJDYK_FEINIU_BASE_URL?.trim();
+  const username = inputHasUsername
+    ? input.username?.trim()
+    : env.WRJDYK_FEINIU_USERNAME?.trim();
   const password = resolveConnectivityPassword(input, env);
   const checkedAt = new Date().toISOString();
   const missingFields = missingFeiniuFields({ baseUrl, password, username });

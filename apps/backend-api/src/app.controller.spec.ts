@@ -234,7 +234,7 @@ describe('AppController', () => {
       expect(appController.getAdminUserInfo()).toEqual({
         code: 0,
         data: expect.objectContaining({
-          homePath: '/dashboard/analytics',
+          homePath: '/analytics',
           realName: '往日重现管理员',
           username: 'admin',
         }),
@@ -276,6 +276,11 @@ describe('AppController', () => {
             name: 'PhotoLibrary',
             path: '/photo-library',
           }),
+          expect.objectContaining({
+            component: '/_core/profile/index',
+            name: 'Profile',
+            path: '/profile',
+          }),
         ]),
       });
     });
@@ -288,7 +293,7 @@ describe('AppController', () => {
         data: expect.objectContaining({
           albumCount: 3,
           databasePath: expect.stringContaining('.sqlite'),
-          migrationVersion: 14,
+          migrationVersion: 15,
           photoCount: 9,
           photoRoot: expect.stringContaining('ceshi'),
         }),

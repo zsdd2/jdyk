@@ -1041,3 +1041,34 @@ GHCR 第七次发布跟进：
 后续计划：
 - 提交并推送 `main`，等待 GHCR 双架构镜像发布完成。
 - 飞牛拉取新的 `latest` 后，验证登录请求为 `/api/auth/login` 且登录成功。
+
+## 27. 2026-06-12 管理端数据清理、AI 默认配置与 1.0.3 发布
+
+当前修改目标：
+- 清理照片列表中内置示例但缺少真实照片文件的记录。
+- 将当前业务 Vision 提示词和标准输出字段要求作为后端系统默认配置。
+- 飞牛连通性检测默认留空，不再预填 `host.docker.internal` 或 `60000`。
+- 登录后直接进入分析页，并打通已有用户中心路由。
+- 发布 `1.0.3` 与新的 `latest` 双架构镜像。
+
+当前状态：
+- 后端 SQLite schema 版本提升到 15。
+- `ai_settings.output_contract_prompt` 为空的旧库会在迁移时补齐标准输出契约。
+- 新库默认业务提示词使用管理端当前本地提示词；评分、旁白、分类和 TV 安全区规则合并到 `scoringPrompt`。
+- 初始化时仅在 `_DSC6456.jpg` 等内置示例照片真实存在时才种示例数据；已存在但缺文件的 `p_001..p_009` 示例照片会自动从照片、相册关联和播放相册关联中清理。
+- 后端用户信息 `homePath` 改为实际可访问的 `/analytics`。
+- 后端菜单新增隐藏的 `/profile` 路由，复用已有用户中心页面。
+- 飞牛测试表单刷新后保持地址、账号、密码为空；后端测试接口收到空表单时不再回退到环境变量。
+- Compose 与 `.env.feiniu.example` 改为 `WRJDYK_FEINIU_BASE_URL` 默认空值。
+- GHCR 固定版本标签已更新为 `1.0.3`。
+
+验证：
+- `corepack pnpm -F @wrjdyk/backend-api run test -- sqlite-photo.repository.spec.ts photo-sources/feiniu/feiniu-config.spec.ts app.controller.spec.ts --runInBand`：通过，3 个测试套件、86 个用例。
+- `corepack pnpm -F @wrjdyk/backend-api run build`：通过。
+- `corepack pnpm -F @vben/web-antd run typecheck`：通过。
+- 管理端生产构建 `vite build --mode production`：通过，7884 个模块完成转换。
+- 已按用户要求停止继续做浏览器/真机级验证，等待飞牛侧实际使用反馈。
+
+后续计划：
+- 提交并推送 `main`，等待 GHCR 发布 `1.0.3` 和 `latest`。
+- 发布完成后给出固定 `1.0.3` Compose，便于飞牛直接拉取。
