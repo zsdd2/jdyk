@@ -897,3 +897,19 @@ GHCR 第七次发布跟进：
   构建步骤，同时继续跳过第三方安装生命周期脚本。
 - 本机完整 stub 命令受 Windows Corepack 子进程 PATH 限制；GitHub runner 使用
   `pnpm/action-setup` 提供真实 pnpm 可执行文件，该命令将在 CI 中作为实际验证。
+
+最终发布结果：
+- GitHub Actions 运行 `27393346844` 整体成功：
+  - `Publish admin`：成功。
+  - `Publish backend`：成功。
+- 匿名 GHCR Registry API 验证：
+  - `ghcr.io/zsdd2/jdyk-admin:1.0`：HTTP 200，包含
+    `linux/amd64`、`linux/arm64`。
+  - `ghcr.io/zsdd2/jdyk-backend:1.0`：HTTP 200，包含
+    `linux/amd64`、`linux/arm64`。
+- 飞牛可直接使用 `docker-compose.feiniu.yml` 匿名拉取双容器，无需 GitHub Token。
+
+后续计划：
+- 在飞牛复制 `.env.feiniu.example` 为 `.env`，填写实际飞牛 IP 后启动 Compose。
+- 配置 Android 长期签名 Secret 并发布 `tv-v1.0` 签名 APK。
+- 将签名 APK 放入飞牛 `./data/releases/wangri-tv-1.0.apk`，完成真实 TV 远程升级验收。
