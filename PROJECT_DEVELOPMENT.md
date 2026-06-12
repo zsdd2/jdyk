@@ -971,3 +971,22 @@ GHCR 第七次发布跟进：
   - `/` 返回状态、`/api`、`/api/health` 与 `192.168.10.166:5200` 入口。
   - `/api/health` 返回 200。
 - 飞牛现网旧版本仍需将 `.env` 的 `JDYK_VERSION` 改为 `1.0.1` 后重新拉取启动。
+
+## 24. 2026-06-12 飞牛 Compose 永久跟随 latest
+
+当前修改目标：
+- 后续飞牛更新不再修改具体镜像版本，只执行拉取和重建。
+
+当前状态：
+- Compose 镜像已固定为：
+  - `ghcr.io/zsdd2/jdyk-backend:latest`
+  - `ghcr.io/zsdd2/jdyk-admin:latest`
+- `.env.feiniu.example` 已移除 `JDYK_VERSION`。
+- GHCR 工作流只在默认分支 `main` 上生成 `latest`，版本标签构建不会覆盖该移动标签。
+- 正常更新命令固定为：
+  `docker compose pull && docker compose up -d --force-recreate`。
+
+后续计划：
+- 每次稳定代码合入 `main` 后由 GHCR 自动更新 `latest`。
+- 飞牛侧只拉取最新镜像并重建容器。
+- 如需回滚，临时将 Compose 镜像标签改为明确的历史版本。

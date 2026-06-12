@@ -2,8 +2,8 @@
 
 ## 部署内容
 
-- 后端：`ghcr.io/zsdd2/jdyk-backend:1.0`
-- 管理端：`ghcr.io/zsdd2/jdyk-admin:1.0`
+- 后端：`ghcr.io/zsdd2/jdyk-backend:latest`
+- 管理端：`ghcr.io/zsdd2/jdyk-admin:latest`
 - 管理后台：`http://<飞牛IP>:5200`
 - 后端 API：`http://<飞牛IP>:3999/api`
 - Android 更新检查：
@@ -12,6 +12,7 @@
   `http://<飞牛IP>:3999/releases/wangri-tv-1.0.apk`
 
 GHCR 镜像为公开镜像，飞牛拉取时不需要 GitHub Token。
+Compose 固定跟随 `latest`，以后升级不需要修改版本号。
 
 ## 首次安装
 
@@ -81,7 +82,7 @@ docker compose --env-file .env.feiniu -f docker-compose.feiniu.yml logs -f backe
 docker compose --env-file .env.feiniu -f docker-compose.feiniu.yml logs -f admin
 ```
 
-回滚时将 `.env.feiniu` 中的 `JDYK_VERSION` 改为已发布的旧版本标签，再执行：
+如需回滚，临时将 Compose 中两个镜像的 `latest` 改为已发布的旧版本标签，再执行：
 
 ```sh
 docker compose --env-file .env.feiniu -f docker-compose.feiniu.yml pull
