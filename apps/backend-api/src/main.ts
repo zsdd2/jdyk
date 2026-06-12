@@ -10,7 +10,10 @@ async function bootstrap() {
     origin: true,
   });
   app.setGlobalPrefix('api', {
-    exclude: [{ method: RequestMethod.GET, path: 'releases/:fileName' }],
+    exclude: [
+      { method: RequestMethod.GET, path: '' },
+      { method: RequestMethod.GET, path: 'releases/:fileName' },
+    ],
   });
 
   const port = Number(process.env.PORT ?? 3999);

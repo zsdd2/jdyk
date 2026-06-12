@@ -79,6 +79,16 @@ describe('AppController', () => {
   });
 
   describe('root', () => {
+    it('returns deployment entry points from the server root', () => {
+      expect(appController.getRoot()).toEqual({
+        adminUrl: 'http://192.168.10.166:5200',
+        apiBaseUrl: '/api',
+        healthUrl: '/api/health',
+        name: 'wangri-zhongxian-backend',
+        status: 'ok',
+      });
+    });
+
     it('should return health status', () => {
       expect(appController.getHealth().status).toBe('ok');
     });

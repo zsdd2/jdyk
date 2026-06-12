@@ -63,6 +63,18 @@ export class AppController {
     }
   }
 
+  @Get()
+  getRoot() {
+    const feiniuHost = process.env.FEINIU_HOST?.trim() || '192.168.10.166';
+    return {
+      adminUrl: `http://${feiniuHost}:5200`,
+      apiBaseUrl: '/api',
+      healthUrl: '/api/health',
+      name: 'wangri-zhongxian-backend',
+      status: 'ok',
+    };
+  }
+
   @Get('health')
   getHealth(): HealthResponse {
     return this.appService.getHealth();
