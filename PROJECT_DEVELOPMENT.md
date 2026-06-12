@@ -1397,8 +1397,11 @@ GHCR 第七次发布跟进：
 - `docker compose -f docker-compose.feiniu.yml config`：通过。
 - `docker compose -f docker-compose.latest.yml config`：通过。
 - 浏览器访问 `http://127.0.0.1:5200/photo-library/tv-release`：页面正常显示 `TV 版本管理` 和上传按钮，控制台无 error。
+- 主提交 `c8aee2c Release admin 1.0.6 and latest compose` 已推送到 `main`。
+- GitHub Actions `Publish GHCR Images` run `27435875499`：成功。
+- `ghcr.io/zsdd2/jdyk-admin:1.0.6` 与 `ghcr.io/zsdd2/jdyk-admin:latest`：manifest 验证通过，包含 `linux/amd64` 与 `linux/arm64`。
+- `ghcr.io/zsdd2/jdyk-backend:1.0.6` 与 `ghcr.io/zsdd2/jdyk-backend:latest`：manifest 验证通过，包含 `linux/amd64` 与 `linux/arm64`。
 
 后续修改计划：
-- 提交并推送 `main`，触发 GHCR 发布 `jdyk-admin:1.0.6`、`jdyk-backend:1.0.6` 和新的 `latest`。
-- GitHub Actions 完成后，验证两个镜像的 `1.0.6/latest` 多架构 manifest。
 - 飞牛侧使用 `docker compose pull && docker compose up -d --force-recreate`，或通用 Compose 使用 `docker compose -f docker-compose.latest.yml up -d` 拉取最新管理端。
+- 飞牛更新后，进入“关于”页确认显示 `当前版本号：1.0.6`，再进入 `TV 版本管理` 上传 Android TV `1.0.3 / versionCode 8` APK。
