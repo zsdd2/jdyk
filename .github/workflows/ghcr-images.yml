@@ -47,6 +47,10 @@ jobs:
         if: matrix.name == 'admin'
         run: pnpm install --frozen-lockfile --ignore-scripts
 
+      - name: Build workspace stubs
+        if: matrix.name == 'admin'
+        run: pnpm -r run --if-present stub
+
       - name: Build admin assets
         if: matrix.name == 'admin'
         working-directory: apps/web-antd

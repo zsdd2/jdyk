@@ -886,3 +886,14 @@ GHCR 第六次发布跟进：
   V8 堆上限是主要根因。
 - 工作流已在该步骤保留 Vite 完整输出，并在失败时将最后 6000 个字符写入 GitHub Error
   Annotation；这样无需管理员日志权限即可通过公开 Check API 获取真实错误文本。
+
+GHCR 第七次发布跟进：
+- 公开 Error Annotation 已得到真实根因：Vite 无法解析 `@vben/vite-config` 的
+  `dist/index.mjs`。
+- `--ignore-scripts` 跳过了仓库根 postinstall 中的内部包 stub 构建；
+  `internal/vite-config/package.json` 明确定义 `stub: pnpm exec tsdown`，并依赖同样需要
+  产物的 `@vben/node-utils`。
+- 管理端 CI 在依赖安装后新增 `pnpm -r run --if-present stub`，恢复仓库原有的内部包
+  构建步骤，同时继续跳过第三方安装生命周期脚本。
+- 本机完整 stub 命令受 Windows Corepack 子进程 PATH 限制；GitHub runner 使用
+  `pnpm/action-setup` 提供真实 pnpm 可执行文件，该命令将在 CI 中作为实际验证。
