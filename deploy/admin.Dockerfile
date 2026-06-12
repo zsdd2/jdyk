@@ -11,7 +11,7 @@ RUN corepack enable
 COPY . .
 
 RUN pnpm install --frozen-lockfile --ignore-scripts
-RUN pnpm -F @vben/web-antd run build
+RUN cd apps/web-antd && ../../node_modules/.bin/vite build --mode production
 
 FROM nginx:1.27-alpine AS production
 

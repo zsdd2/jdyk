@@ -850,3 +850,14 @@ GHCR 第二次发布跟进：
 下一步：
 - 推送第三轮修复并等待两个镜像任务成功。
 - 匿名验证管理端和后端 `1.0` 标签的双架构清单。
+
+GHCR 第三次发布跟进：
+- 管理端已确认在原生 `$BUILDPLATFORM` 构建，但仍失败于
+  `pnpm -F @vben/web-antd run build`。
+- 管理端包的 `build` 脚本内部再次执行 `pnpm vite build`；该嵌套 pnpm 调用在当前
+  Windows 验证环境也曾因子进程找不到 pnpm shim 失败，而直接执行 Vite 已通过。
+- `pnpm --dir apps/web-antd exec vite` 会按应用目录查找二进制，但本仓库的 Vite 被提升到
+  根工作区；本地已准确复现其“找不到 vite”。
+- Dockerfile 已改为在应用目录显式调用
+  `../../node_modules/.bin/vite build --mode production`，消除嵌套 pnpm 调用并匹配
+  pnpm 实际安装布局。
