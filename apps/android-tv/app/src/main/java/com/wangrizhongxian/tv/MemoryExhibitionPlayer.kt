@@ -51,9 +51,15 @@ import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil3.ImageLoader
@@ -100,9 +106,7 @@ fun MemoryExhibitionPlayer(
       ),
       label = "caption-alpha",
     )
-  val narrationVariant = remember(item.photoId, currentIndex) {
-    item.narrationVariants.randomOrNull()
-  }
+  val narrationVariant = remember(item.photoId) { item.narrationVariants.firstOrNull() }
 
   LaunchedEffect(item.photoId, item.durationMs) {
     motionProgress.snapTo(0f)
@@ -213,7 +217,7 @@ fun MemoryExhibitionPlayer(
       onReady = { imageLoadState = ExhibitionImageLoadState.Ready },
       onError = { imageLoadState = ExhibitionImageLoadState.Error },
     )
-    OverlayStage(item = item)
+    OverlayStage()
     CaptionStage(
       item = item,
       narrationVariant = narrationVariant,
@@ -370,10 +374,7 @@ private fun ImageStage(
 ) {
   val request = ImageRequest.Builder(LocalContext.current).data(item.displayImageUrl).build()
   val scale = 1f + 0.045f * motionProgress
-  val translateX = when (item.layoutPosition.lowercase()) {
-    "top_right", "bottom_right", "right_bottom" -> -22f * motionProgress
-    else -> 22f * motionProgress
-  }
+  val translateX = 0f
   val translateY = -12f * motionProgress
 
   AsyncImage(
@@ -410,8 +411,7 @@ private fun ImageStage(
 }
 
 @Composable
-private fun OverlayStage(item: TvPlaylistItem) {
-  val position = item.layoutPosition.lowercase()
+private fun OverlayStage() {
   Box(
     modifier = Modifier
       .fillMaxSize()
@@ -422,26 +422,15 @@ private fun OverlayStage(item: TvPlaylistItem) {
         ),
       ),
   )
-  val horizontal = when {
-    position.contains("right") -> listOf(Color.Transparent, Color(0x18000000), Color(0x52000000))
-    else -> listOf(Color(0x52000000), Color(0x18000000), Color.Transparent)
-  }
   Box(
     modifier = Modifier
       .fillMaxSize()
-      .background(Brush.horizontalGradient(horizontal)),
-  )
-  if (position.contains("bottom")) {
-    Box(
-      modifier = Modifier
-        .fillMaxSize()
-        .background(
-          Brush.verticalGradient(
-            listOf(Color.Transparent, Color(0x12000000), Color(0x5F000000)),
-          ),
+      .background(
+        Brush.verticalGradient(
+          listOf(Color.Transparent, Color(0x12000000), Color(0x68000000)),
         ),
-    )
-  }
+      ),
+  )
 }
 
 @Composable
@@ -452,49 +441,73 @@ private fun CaptionStage(
   textOffset: Float,
 ) {
   BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
-    val safeArea = item.exhibitionSafeArea()
-    val lines = item.exhibitionCaptionLines(narrationVariant)
+    val safeArea = cinematicSubtitleArea()
+    val lines = item.cinematicCaptionLines(narrationVariant)
+    val density = LocalDensity.current
+    val designLines = cinematicCaptionDesignLines()
+    val stageWidth = maxWidth
+    val stageHeight = maxHeight
     Box(
       modifier = Modifier
         .padding(
-          start = maxWidth * safeArea.x,
-          top = maxHeight * (safeArea.y - 0.02f).coerceAtLeast(0f),
+          start = stageWidth * safeArea.x,
+          top = stageHeight * safeArea.y,
         )
-        .width(maxWidth * safeArea.w)
-        .height(maxHeight * safeArea.h.coerceAtLeast(0.22f))
+        .width(stageWidth * safeArea.w)
+        .height(stageHeight * safeArea.h)
         .background(
-          Brush.horizontalGradient(
-            when (item.layoutPosition.lowercase().contains("right")) {
-              true -> listOf(Color.Transparent, Color(0x26000000))
-              false -> listOf(Color(0x26000000), Color.Transparent)
-            },
+          Brush.verticalGradient(
+            listOf(Color.Transparent, Color(0x36000000), Color(0x50000000)),
           ),
         ),
     )
     Column(
       modifier = Modifier
         .padding(
-          start = maxWidth * safeArea.x,
-          top = maxHeight * safeArea.y,
+          start = stageWidth * safeArea.x,
+          top = stageHeight * safeArea.y,
         )
-        .width(maxWidth * safeArea.w)
+        .width(stageWidth * safeArea.w)
+        .height(stageHeight * safeArea.h)
         .graphicsLayer {
           alpha = textAlpha.coerceIn(0f, 1f)
           translationY = textOffset
         },
-      horizontalAlignment = item.exhibitionHorizontalAlignment(),
+      horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-      lines.forEachIndexed { index, line ->
+      designLines.forEachIndexed { index, spec ->
+        val line = lines.getOrNull(index) ?: return@forEachIndexed
         val role = when {
           lines.size >= 3 && index == 1 -> CaptionRole.Emphasis
           index == lines.lastIndex -> CaptionRole.Soft
           else -> CaptionRole.Normal
         }
+        val fontSize = with(density) {
+          (stageHeight.toPx() * spec.fontSize / CinematicCaptionCanvasHeight).toSp()
+        }
+        val lineHeight = with(density) {
+          (stageHeight.toPx() * spec.lineHeight / CinematicCaptionCanvasHeight).toSp()
+        }
+        val letterSpacing = with(density) {
+          (stageHeight.toPx() * spec.letterSpacing / CinematicCaptionCanvasHeight).toSp()
+        }
         BasicText(
-          text = line,
-          style = item.exhibitionTextStyle(role),
+          modifier = Modifier
+            .padding(
+              start = stageWidth * ((spec.left - safeArea.x * CinematicCaptionCanvasWidth) / CinematicCaptionCanvasWidth),
+              top = stageHeight * ((spec.top - safeArea.y * CinematicCaptionCanvasHeight) / CinematicCaptionCanvasHeight),
+            )
+            .width(stageWidth * (spec.width / CinematicCaptionCanvasWidth))
+            .height(stageHeight * (spec.height / CinematicCaptionCanvasHeight)),
+          maxLines = 1,
+          text = cinematicCaptionText(line, role),
+          style = cinematicSubtitleTextStyle(
+            role = role,
+            fontSize = fontSize,
+            letterSpacing = letterSpacing,
+            lineHeight = lineHeight,
+          ),
         )
-        if (index != lines.lastIndex) Spacer(modifier = Modifier.height(if (role == CaptionRole.Emphasis) 9.dp else 7.dp))
       }
     }
   }
@@ -527,13 +540,72 @@ private enum class ExhibitionImageLoadState {
   Error,
 }
 
-private enum class CaptionRole {
+internal enum class CaptionRole {
   Normal,
   Emphasis,
   Soft,
 }
 
-private fun TvPlaylistItem.exhibitionCaptionLines(
+internal data class CinematicCaptionLineSpec(
+  val fontSize: Int,
+  val height: Int,
+  val left: Int,
+  val letterSpacing: Int,
+  val lineHeight: Int,
+  val top: Int,
+  val width: Int,
+)
+
+private const val CinematicCaptionCanvasWidth = 3840f
+private const val CinematicCaptionCanvasHeight = 2160f
+
+internal fun cinematicCaptionDesignLines(): List<CinematicCaptionLineSpec> {
+  return listOf(
+    CinematicCaptionLineSpec(
+      left = 1455,
+      top = 1524,
+      width = 889,
+      height = 90,
+      fontSize = 88,
+      lineHeight = 104,
+      letterSpacing = 42,
+    ),
+    CinematicCaptionLineSpec(
+      left = 912,
+      top = 1691,
+      width = 2067,
+      height = 199,
+      fontSize = 160,
+      lineHeight = 200,
+      letterSpacing = 2,
+    ),
+    CinematicCaptionLineSpec(
+      left = 1463,
+      top = 1941,
+      width = 917,
+      height = 84,
+      fontSize = 84,
+      lineHeight = 100,
+      letterSpacing = 36,
+    ),
+  )
+}
+
+internal fun cinematicSubtitleArea(): TvSafeArea {
+  val lines = cinematicCaptionDesignLines()
+  val left = lines.minOf { it.left }
+  val top = lines.minOf { it.top }
+  val right = lines.maxOf { it.left + it.width }
+  val bottom = lines.maxOf { it.top + it.height }
+  return TvSafeArea(
+    x = left / CinematicCaptionCanvasWidth,
+    y = top / CinematicCaptionCanvasHeight,
+    w = (right - left) / CinematicCaptionCanvasWidth,
+    h = (bottom - top) / CinematicCaptionCanvasHeight,
+  )
+}
+
+internal fun TvPlaylistItem.cinematicCaptionLines(
   narrationVariant: TvNarrationVariant?,
 ): List<String> {
   if (narrationVariant != null) {
@@ -545,52 +617,42 @@ private fun TvPlaylistItem.exhibitionCaptionLines(
   }
   val text = aiComment
     .ifBlank { captionText }
-    .replace(Regex("\\s+"), "")
+    .replace(Regex("\\s+"), " ")
     .trim('，', '。', ',', '.', ' ')
   if (text.isBlank()) return emptyList()
   val segments = text
-    .split('，', '。', '、', ',', '.', '；', ';', ' ')
+    .split('，', '。', '、', ',', '.', '；', ';')
     .map { it.trim() }
     .filter { it.isNotBlank() }
-  if (segments.size in 2..3) return segments.take(3)
+  if (segments.size >= 2) return segments.take(3)
   if (text.length <= 11) return listOf(text)
   val lineCount = if (text.length <= 24) 2 else 3
   val lineLength = kotlin.math.ceil(text.length.toDouble() / lineCount).toInt()
   return text.chunked(lineLength).take(3)
 }
 
-private fun TvPlaylistItem.exhibitionHorizontalAlignment(): Alignment.Horizontal {
-  return when (layoutPosition.lowercase()) {
-    "right_bottom", "top_right", "bottom_right" -> Alignment.End
-    "center_safe" -> Alignment.CenterHorizontally
-    else -> Alignment.Start
+private fun cinematicCaptionText(line: String, role: CaptionRole): AnnotatedString {
+  if (role != CaptionRole.Emphasis) return AnnotatedString(line)
+  return buildAnnotatedString {
+    line.forEach { character ->
+      if (character in setOf('，', ',', '。', '.', '；', ';', '、')) {
+        withStyle(SpanStyle(color = Color(0xFFC43A32))) {
+          append(character)
+        }
+      } else {
+        append(character)
+      }
+    }
   }
 }
 
-private fun TvPlaylistItem.exhibitionSafeArea(): TvSafeArea {
-  val area = safeArea.normalized()
-  val position = layoutPosition.lowercase()
-  val width = area.w.coerceIn(0.34f, 0.42f)
-  val height = area.h.coerceIn(0.20f, 0.32f)
-  val x = when {
-    position.contains("right") -> area.x.coerceIn(0.44f, 0.50f)
-    position.contains("center") -> area.x.coerceIn(0.28f, 0.34f)
-    else -> area.x.coerceIn(0.08f, 0.14f)
-  }.coerceAtMost(1f - width - 0.08f)
-  val y = when {
-    position.contains("top") -> area.y.coerceIn(0.18f, 0.30f)
-    position.contains("center") -> area.y.coerceIn(0.34f, 0.46f)
-    else -> area.y.coerceIn(0.42f, 0.54f)
-  }.coerceAtMost(1f - height - 0.10f)
-  return TvSafeArea(x = x, y = y, w = width, h = height)
-}
-
-private fun TvPlaylistItem.exhibitionTextStyle(role: CaptionRole): TextStyle {
-  val baseColor = when (textColor.uppercase()) {
-    "#000000" -> Color(0xFFF5E9D2)
-    "#FFFFFF" -> Color(0xFFF5E9D2)
-    else -> Color(0xFFF5E9D2)
-  }
+internal fun cinematicSubtitleTextStyle(
+  role: CaptionRole,
+  fontSize: androidx.compose.ui.unit.TextUnit,
+  letterSpacing: androidx.compose.ui.unit.TextUnit,
+  lineHeight: androidx.compose.ui.unit.TextUnit,
+): TextStyle {
+  val baseColor = Color(0xFFF5E9D2)
   val roleColor = when (role) {
     CaptionRole.Emphasis -> Color(0xFFFFE7B8)
     CaptionRole.Soft -> baseColor.copy(alpha = 0.86f)
@@ -598,36 +660,24 @@ private fun TvPlaylistItem.exhibitionTextStyle(role: CaptionRole): TextStyle {
   }
   return TextStyle(
     color = roleColor,
-    fontFamily = when {
-      role == CaptionRole.Emphasis || fontStyle.lowercase() == "handwriting" -> FontFamily.Cursive
-      role == CaptionRole.Soft -> FontFamily.SansSerif
-      else -> FontFamily.Serif
+    fontFamily = when (role) {
+      CaptionRole.Emphasis -> FontFamily.Cursive
+      CaptionRole.Soft -> FontFamily.Serif
+      CaptionRole.Normal -> FontFamily.Serif
     },
-    fontSize = when (role) {
-      CaptionRole.Emphasis -> 54.sp
-      CaptionRole.Soft -> 32.sp
-      CaptionRole.Normal -> 40.sp
+    fontSize = fontSize,
+    fontWeight = when (role) {
+      CaptionRole.Emphasis -> FontWeight.Medium
+      CaptionRole.Soft -> FontWeight.Normal
+      CaptionRole.Normal -> FontWeight.Normal
     },
-    fontWeight = when {
-      role == CaptionRole.Emphasis -> FontWeight.Medium
-      fontWeight.lowercase() == "bold" || fontWeight.lowercase() == "heavy" -> FontWeight.Bold
-      fontWeight.lowercase() == "light" -> FontWeight.Light
-      else -> FontWeight.Normal
-    },
-    lineHeight = when (role) {
-      CaptionRole.Emphasis -> 62.sp
-      CaptionRole.Soft -> 40.sp
-      CaptionRole.Normal -> 50.sp
-    },
-    letterSpacing = when (role) {
-      CaptionRole.Emphasis -> 1.2.sp
-      CaptionRole.Soft -> 1.4.sp
-      CaptionRole.Normal -> 2.2.sp
-    },
+    lineHeight = lineHeight,
+    letterSpacing = letterSpacing,
+    textAlign = TextAlign.Center,
     shadow = Shadow(
-      color = Color.Black.copy(alpha = 0.36f),
+      color = Color.Black.copy(alpha = 0.58f),
       offset = Offset(0f, 3f),
-      blurRadius = 9f,
+      blurRadius = 10f,
     ),
   )
 }

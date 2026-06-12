@@ -106,12 +106,14 @@ describe('AppController', () => {
         force: process.env.WRJDYK_TV_UPDATE_FORCE,
         notes: process.env.WRJDYK_TV_UPDATE_NOTES,
         publishedAt: process.env.WRJDYK_TV_UPDATE_PUBLISHED_AT,
+        releasesDir: process.env.WRJDYK_RELEASES_DIR,
         sha256: process.env.WRJDYK_TV_UPDATE_SHA256,
         sizeBytes: process.env.WRJDYK_TV_UPDATE_SIZE_BYTES,
         versionCode: process.env.WRJDYK_TV_UPDATE_VERSION_CODE,
         versionName: process.env.WRJDYK_TV_UPDATE_VERSION_NAME,
       };
 
+      process.env.WRJDYK_RELEASES_DIR = join(testDataDir, 'env-manifest-empty-releases');
       process.env.WRJDYK_TV_UPDATE_APK_URL = 'https://nas.example.com/releases/wrjdyk-tv.apk';
       process.env.WRJDYK_TV_UPDATE_FORCE = 'true';
       process.env.WRJDYK_TV_UPDATE_NOTES = '升级远程更新能力';
@@ -121,37 +123,42 @@ describe('AppController', () => {
       process.env.WRJDYK_TV_UPDATE_VERSION_CODE = '5';
       process.env.WRJDYK_TV_UPDATE_VERSION_NAME = '0.1.4';
 
-      expect(appController.getTvAppUpdateManifest()).toEqual({
-        code: 0,
-        data: {
-          apkUrl: 'https://nas.example.com/releases/wrjdyk-tv.apk',
-          forceUpdate: true,
-          publishedAt: '2026-06-11T13:00:00.000Z',
-          releaseNotes: '升级远程更新能力',
-          sha256: 'abc123',
-          sizeBytes: 123456,
-          versionCode: 5,
-          versionName: '0.1.4',
-        },
-      });
-
-      restoreEnv('WRJDYK_TV_UPDATE_APK_URL', previousEnv.apkUrl);
-      restoreEnv('WRJDYK_TV_UPDATE_FORCE', previousEnv.force);
-      restoreEnv('WRJDYK_TV_UPDATE_NOTES', previousEnv.notes);
-      restoreEnv('WRJDYK_TV_UPDATE_PUBLISHED_AT', previousEnv.publishedAt);
-      restoreEnv('WRJDYK_TV_UPDATE_SHA256', previousEnv.sha256);
-      restoreEnv('WRJDYK_TV_UPDATE_SIZE_BYTES', previousEnv.sizeBytes);
-      restoreEnv('WRJDYK_TV_UPDATE_VERSION_CODE', previousEnv.versionCode);
-      restoreEnv('WRJDYK_TV_UPDATE_VERSION_NAME', previousEnv.versionName);
+      try {
+        expect(appController.getTvAppUpdateManifest()).toEqual({
+          code: 0,
+          data: {
+            apkUrl: 'https://nas.example.com/releases/wrjdyk-tv.apk',
+            forceUpdate: true,
+            publishedAt: '2026-06-11T13:00:00.000Z',
+            releaseNotes: '升级远程更新能力',
+            sha256: 'abc123',
+            sizeBytes: 123456,
+            versionCode: 5,
+            versionName: '0.1.4',
+          },
+        });
+      } finally {
+        restoreEnv('WRJDYK_RELEASES_DIR', previousEnv.releasesDir);
+        restoreEnv('WRJDYK_TV_UPDATE_APK_URL', previousEnv.apkUrl);
+        restoreEnv('WRJDYK_TV_UPDATE_FORCE', previousEnv.force);
+        restoreEnv('WRJDYK_TV_UPDATE_NOTES', previousEnv.notes);
+        restoreEnv('WRJDYK_TV_UPDATE_PUBLISHED_AT', previousEnv.publishedAt);
+        restoreEnv('WRJDYK_TV_UPDATE_SHA256', previousEnv.sha256);
+        restoreEnv('WRJDYK_TV_UPDATE_SIZE_BYTES', previousEnv.sizeBytes);
+        restoreEnv('WRJDYK_TV_UPDATE_VERSION_CODE', previousEnv.versionCode);
+        restoreEnv('WRJDYK_TV_UPDATE_VERSION_NAME', previousEnv.versionName);
+      }
     });
 
     it('derives the TV APK URL from the incoming host when no override exists', () => {
       const previousApkUrl = process.env.WRJDYK_TV_UPDATE_APK_URL;
+      const previousReleaseDir = process.env.WRJDYK_RELEASES_DIR;
       const previousVersionCode = process.env.WRJDYK_TV_UPDATE_VERSION_CODE;
       const previousVersionName = process.env.WRJDYK_TV_UPDATE_VERSION_NAME;
       delete process.env.WRJDYK_TV_UPDATE_APK_URL;
-      process.env.WRJDYK_TV_UPDATE_VERSION_CODE = '7';
-      process.env.WRJDYK_TV_UPDATE_VERSION_NAME = '1.0.2';
+      process.env.WRJDYK_RELEASES_DIR = join(testDataDir, 'host-derived-empty-releases');
+      process.env.WRJDYK_TV_UPDATE_VERSION_CODE = '8';
+      process.env.WRJDYK_TV_UPDATE_VERSION_NAME = '1.0.3';
 
       try {
         expect(
@@ -162,9 +169,10 @@ describe('AppController', () => {
                 : undefined,
             protocol: 'http',
           } as never).data.apkUrl,
-        ).toBe('http://192.168.50.20:3999/releases/wangri-tv-1.0.2.apk');
+        ).toBe('http://192.168.50.20:3999/releases/wangri-tv-1.0.3.apk');
       } finally {
         restoreEnv('WRJDYK_TV_UPDATE_APK_URL', previousApkUrl);
+        restoreEnv('WRJDYK_RELEASES_DIR', previousReleaseDir);
         restoreEnv('WRJDYK_TV_UPDATE_VERSION_CODE', previousVersionCode);
         restoreEnv('WRJDYK_TV_UPDATE_VERSION_NAME', previousVersionName);
       }

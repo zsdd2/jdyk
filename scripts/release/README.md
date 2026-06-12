@@ -17,7 +17,7 @@ Run the fixed local verification path:
 .\scripts\release\verify-local-release.ps1 `
   -ImageVersion 1.0.5 `
   -TvVersionCode 7 `
-  -TvVersionName 1.0.2
+  -TvVersionName 1.0.3
 ```
 
 Important constraints:
@@ -33,7 +33,7 @@ Important constraints:
 ```powershell
 git status --short
 git add .
-git commit -m "Release backend 1.0.5 and TV 1.0.2"
+git commit -m "Release backend 1.0.5 and TV 1.0.3"
 git push origin main
 ```
 
@@ -47,13 +47,13 @@ The main push publishes:
 ## 4. Publish Android TV
 
 ```powershell
-git tag tv-v1.0.2
-git push origin tv-v1.0.2
+git tag tv-v1.0.3
+git push origin tv-v1.0.3
 ```
 
 The Android TV workflow must create a GitHub Release containing:
 
-- `wangri-tv-1.0.2.apk`
+- `wangri-tv-1.0.3.apk`
 - `latest.json`
 - `feiniu-update.env`
 
@@ -61,10 +61,10 @@ The Android TV workflow must create a GitHub Release containing:
 
 - Confirm GHCR workflow succeeded for backend and admin.
 - Confirm Android TV workflow succeeded and `apksigner verify` passed in Actions.
-- Download `latest.json` and `wangri-tv-1.0.2.apk`.
+- Download `latest.json` and `wangri-tv-1.0.3.apk`.
 - Verify APK size and SHA256 match `latest.json`.
-- Verify APK package metadata is `versionCode=7` and `versionName=1.0.2`.
-- Save the signed APK locally under `apps/android-tv/build/release/wangri-tv-1.0.2.apk`.
+- Verify APK package metadata is `versionCode=8` and `versionName=1.0.3`.
+- Save the signed APK locally under `apps/android-tv/build/release/wangri-tv-1.0.3.apk`.
 
 ## 6. Verify Update Endpoint
 

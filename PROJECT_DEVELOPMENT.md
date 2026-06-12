@@ -1330,3 +1330,44 @@ GHCR 第七次发布跟进：
 - 通过文档进度提交重触发 GHCR `1.0.5/latest` 后台镜像发布。
 - 新 GHCR run 完成后，验证 `jdyk-admin:1.0.5`、`jdyk-backend:1.0.5` 与 `latest` 的多架构 manifest。
 - 若后台 Buildx 再次失败，再只调整 GHCR backend 构建/缓存策略，不改 TV Release。
+
+## 36. 2026-06-13 Android TV 固定三行字幕播放模板
+
+当前修改目标：
+- 第一版 TV 播放版式不再参考 AI 返回的版式、安全区、字体和左右位置建议。
+- 所有照片固定使用电影字幕式三行居中展示：上方标准字体、中间手写体、下方标准字体。
+- 按 3840x2160 设计稿逐行还原字幕坐标、字号、行高和字距：
+  - 第一行：`left=1455 top=1524 width=889 height=90 fontSize=88 lineHeight=104 letterSpacing=42`
+  - 第二行：`left=912 top=1691 width=2067 height=199 fontSize=160 lineHeight=200 letterSpacing=2`
+  - 第三行：`left=1463 top=1941 width=917 height=84 fontSize=84 lineHeight=100 letterSpacing=36`
+
+当前状态：
+- `MemoryExhibitionPlayer` 已改为固定使用第一组三段式 `narrationVariants`，避免播放模板阶段随机切换。
+- `CaptionStage` 已固定使用 `cinematicCaptionDesignLines()` 的 4K 坐标按当前屏幕尺寸缩放，不再读取 `layoutPosition` 或 `safeArea` 决定字幕区域。
+- 字体样式已固定为上/下 Serif 标准字体、中间 Cursive 手写体，文本统一居中；中间行逗号、句号、顿号等标点使用红色强调。
+- 遮罩改为通用底部纵向暗场，避免根据 AI 建议做左/右渐变。
+- 图片轻运动不再根据 `layoutPosition` 左右偏移。
+- Android TV 版本已提升到 `versionCode 8 / versionName 1.0.3`，并同步 `.env.feiniu.example`、`docker-compose.feiniu.yml`、Android manifest 测试、TV README 和本地发布校验脚本。
+- 新增 `MemoryExhibitionPlayerTest`，覆盖 4K 设计边界、逐行设计规格、三段旁白顺序和 fallback 最多三行。
+- 已生成签名 APK 并本地保留：`apps/android-tv/build/release/wangri-tv-1.0.3.apk`，大小 `8632033` bytes，SHA256 `3287dbf300b93a1f8794696ab19df716f03dcd33c6258765934ee612e3fb11ec`。
+- 已上传到本地后台 releases：`apps/backend-api/releases/wangri-tv-1.0.3.apk`，并生成 `apps/backend-api/releases/latest.json`。
+- 后台 `app.controller.spec.ts` 已隔离 `WRJDYK_RELEASES_DIR`，避免本地已上传的真实 `latest.json` 污染 runtime env 相关单元测试。
+
+验证：
+- 已先运行 `:app:testDebugUnitTest --tests com.wangrizhongxian.tv.MemoryExhibitionPlayerTest` 看到缺少新模板 helper 的预期失败。
+- 已在 4K 设计规格测试修改后再次看到当前实现不满足的预期失败，然后按规格实现并转绿。
+- `node --test scripts/android-tv/generate-update-manifest.test.mjs`：通过。
+- `:app:testDebugUnitTest --tests com.wangrizhongxian.tv.MemoryExhibitionPlayerTest`：通过。
+- `:app:testDebugUnitTest`：通过。
+- `:app:assembleRelease`：通过，使用本地可覆盖旧版的 Android TV release keystore 签名。
+- `aapt dump badging`：确认 APK 为 `versionCode=8 / versionName=1.0.3`。
+- `apksigner verify --print-certs`：通过，证书 SHA-256 指纹为 `b88d6fac9014fa4e702daabce0d2580046ae9e6d0b1691412d36e0fbed3ce9aa`。
+- `GET http://127.0.0.1:3999/api/device/app-update/latest`：返回 `8 / 1.0.3`，下载地址为 `http://127.0.0.1:3999/releases/wangri-tv-1.0.3.apk`。
+- 下载校验文件 `apps/android-tv/build/release/wangri-tv-1.0.3-download-check.apk`：大小 `8632033` bytes，SHA256 与 manifest 一致。
+- `docker compose -f docker-compose.feiniu.yml config`：通过，展开后的 TV 默认升级版本为 `8 / 1.0.3`。
+- `.\scripts\release\verify-local-release.ps1 -TvVersionCode 8 -TvVersionName 1.0.3`：通过。覆盖版本面检查、Android manifest 测试、后台 87 个 Jest 用例、管理端路由 Vitest、后台 build、管理端 typecheck、管理端 production build、Compose 展开、Android debug/release 构建和 APK 元数据检查。
+
+后续修改计划：
+- 如需正式 GitHub 发布，再提交并推送 `main`，创建并推送 `tv-v1.0.3` tag，触发 GitHub Android TV Release workflow。
+- 字体形态目前依赖系统 Serif/Cursive fallback；若要完全贴合 `Source Han Serif SC` 与 `Ma Shan Zheng/Zhi Mang Xing/LXGW WenKai`，后续需要把字体文件加入 Android TV 资源并显式加载。
+- 后续增加多模板时，在当前固定模板基础上扩展模板枚举和随机策略，不再把 AI 版式建议直接作为播放器布局输入。
