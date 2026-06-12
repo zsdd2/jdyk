@@ -1184,3 +1184,136 @@ GHCR 第七次发布跟进：
 - GitHub Release 中的 `feiniu-update.env` 已手动覆盖为动态地址版本，当前资产不再包含 `FEINIU_HOST` 占位符。
 - GHCR Actions `27422893414` 已成功完成管理端和后端发布；匿名 `docker manifest inspect` 确认 `latest` 与 `1.0.4` 均包含 `linux/amd64`、`linux/arm64`。
 - 从当前开发机访问 `192.168.10.166:3999` 失败，因此飞牛容器更新接口和电视端安装仍需在飞牛恢复可访问后由用户现场验收。
+
+## 32. 2026-06-12 补全 AI 旧版 JSON 输出修复
+
+当前修改目标：
+- 排查“补全 AI”返回 `analysis/display_mode/typography/layout/handwriting` 旧版版式 JSON，导致与当前三段式旁白输出不一致的问题。
+- 确认补全 AI 是否使用当前后台业务提示词和标准输出契约链路。
+- 阻止旧版 layout-only 返回被当成成功 AI 结果写入。
+
+根因：
+- “补全 AI”和“重新识别”最终都走 `buildUnifiedVisionSystemPrompt()`，都会读取当前 AI 设置。
+- 当前业务提示词中仍混有旧的“输出 JSON 格式”示例，示例字段包括 `display_mode`、`typography`、`handwriting` 等。
+- 旧拼接顺序把“标准输出字段要求”放在业务提示词之前，业务提示词里的旧 JSON 示例更靠后，模型可能照抄旧结构。
+- `normalizeUnifiedVisionResult()` 对旧版 layout-only 结构仍会走 legacy 解析并标记成功，导致错误结构没有进入失败/重试路径。
+
+当前状态：
+- `buildUnifiedVisionSystemPrompt()` 已调整为先放业务提示词，再放标准输出字段要求，并明确“标准输出字段要求的优先级高于业务提示词中的任何输出示例”。
+- 后端新增旧版 layout-only 响应识别：当返回包含 `display_mode`、`typography`、`handwriting`、`photo_meta` 或 `push_info`，但缺少 `scores`、`narration_options`、`selected_narration_index`、`layout_plan` 时，直接抛错，不再写入完成结果。
+- 新增回归测试覆盖提示词顺序和旧版 layout-only 返回拒绝。
+
+验证：
+- `.\node_modules\.bin\jest.CMD app.controller.spec.ts --runInBand --testNamePattern="standard output contract after|legacy layout-only"`：2 个测试通过。
+- `.\node_modules\.bin\jest.CMD app.controller.spec.ts --runInBand --testNamePattern="photo_tv_payload_v1|narration_options|standard output contract|legacy layout-only|normalizes nested analysis|normalizes ai_analysis"`：8 个测试通过。
+- `.\node_modules\.bin\jest.CMD sqlite-photo.repository.spec.ts --runInBand --testNamePattern="output contract|narration_options|AI settings"`：4 个测试通过。
+- `corepack pnpm -F @wrjdyk/backend-api run build`：通过。
+
+后续计划：
+- 如线上后台业务提示词仍保留旧 JSON 示例，建议在管理端将旧“输出 JSON 格式”示例移出业务提示词，仅保留业务判断规则。
+- 重新运行补全 AI；若模型仍返回旧版顶层结构，任务会失败/重试并显示错误，不会再污染已完成 AI 结果。
+## 33. 2026-06-12 TV 盒子磨砂背景兼容与后台升级包上传
+
+当前修改目标：
+- 修复 Android TV 在模拟器有磨砂背景、电视盒子上背景变清晰的问题。
+- 继续电视端三段式播放计划，确认播放端使用结构化 `narrationVariants`。
+- 给飞牛后台补齐 TV APK 上传与远程升级 manifest 管理能力，避免正式盒子拿到的 APK 与本地代码版本不一致。
+
+根因：
+- 播放端当前入口已经走 `MemoryExhibitionPlayer`，该组件在模拟器通过 Compose `Modifier.blur(22.dp)` 实现背景模糊和三段式展示。
+- 用户实测 1.0.0/1.0.1 在模拟器均正常，但电视盒子背景清晰，说明问题更符合盒子系统/图形栈对运行时 blur 支持不足，而不是版本代码差异。
+- 后端原 `tv_4k.webp` 只是清晰缩放图，盒子端实时 blur 失效时会暴露清晰背景。
+- 本地 `releases` 目录只有 `wangri-tv-1.0.apk`，而设备默认 manifest 指向 `wangri-tv-1.0.1.apk`；此前后台没有上传升级包入口，容易造成正式 APK 来源不可控。
+
+当前状态：
+- 后端衍生图生成改为写入 `tv_blur_fill.webp`：服务端用 Sharp 预合成 3840x2160 的模糊填充背景和居中清晰前景，playlist 的 `display.tvImageUrl` / `displayImageUrl` 指向该文件。
+- 旧缓存兼容：若已有 `ai_720.webp` 但缺少 `tv_blur_fill.webp`，再次扫描/AI 任务会重新拉取素材并补生成，不会直接复用清晰旧缓存。
+- 衍生图访问白名单已允许 `tv_blur_fill.webp`。
+- 后端新增：
+  - `GET /api/admin/photo-library/tv-release`
+  - `POST /api/admin/photo-library/tv-release/upload`
+- 上传 APK 后写入 `WRJDYK_RELEASES_DIR`，生成 `latest.json`，包含 `apkUrl`、`versionCode`、`versionName`、`sizeBytes`、`sha256`、`publishedAt`、`releaseNotes`、`forceUpdate`。
+- `GET /api/device/app-update/latest` 优先读取上传生成的 `latest.json`；如果 `apkUrl` 是 `/releases/...apk`，会按当前请求 Host 生成可下载的绝对地址。
+- 管理端照片中心新增 `TV 版本管理` 页面，可查看当前 manifest/文件状态并上传新 APK。
+- 现有本地改动尚未推送；后续推送需等待用户审批。
+
+验证：
+- `corepack pnpm --filter @wrjdyk/backend-api test -- --runInBand app.controller.spec.ts sqlite-photo.repository.spec.ts`：通过，87 个测试。
+- `corepack pnpm --filter @vben/web-antd run typecheck`：通过。
+- `corepack pnpm --filter @wrjdyk/backend-api run build`：通过。
+
+后续计划：
+- 在飞牛后台上传下一版正式签名 APK，确认 `latest.json` 指向上传包。
+- 电视盒子拉取新版本后，验证播放背景是否使用服务端预合成磨砂图。
+- 如需历史版本回滚，再在 `TV 版本管理` 基础上扩展版本列表和激活/回滚操作。
+
+## 34. 2026-06-13 GitHub 与本地开发进度对齐
+
+当前修改目标：
+- 对比 GitHub `origin/main`、本地已提交 HEAD、未提交工作区和本地运行服务，确认功能实际处于哪一层。
+- 修复管理端进入首页仍打开模板分析页的问题。
+- 修复后端已返回 `TV 版本管理` 菜单，但 frontend 权限模式下侧栏和页面仍不可见的问题。
+
+对比结论：
+- `origin/main` 与本地 HEAD 均为 `cb4f65125f96131d142e1ed24088ed2754f96702`，已提交历史没有分叉。
+- AI 提示词旧版 JSON 拒绝、服务端 `tv_blur_fill.webp`、TV 升级包上传接口和管理页仍属于本地未提交工作区，GitHub 当前版本尚未包含。
+- GitHub 与本地已提交代码都把默认首页设为 `/analytics`，因此进入分析页是代码行为，不是部署缓存或推送异常。
+- 管理端当前默认使用 `accessMode: 'frontend'`，菜单来自本地静态路由；此前只增加了后端 `PhotoLibraryTvRelease` 菜单，没有同步增加前端静态路由，导致接口存在但侧栏不显示、直达页面返回 404。
+
+当前状态：
+- 后端用户信息 `homePath` 已改为 `/photo-library/photos`。
+- 管理端应用级 `defaultHomePath` 已改为 `/photo-library/photos`，没有修改共享 Vben 默认配置。
+- 照片中心静态路由已增加 `PhotoLibraryTvRelease`，指向 `/photo-library/tv-release`。
+- 新增首页配置和 TV 静态路由回归测试。
+- 本地后端使用当前 `dist` 监听 `3999`；管理端 Vite 使用当前源码监听 `5200`。
+
+已完成验证：
+- `app.controller.spec.ts` 首页定向测试：1 个通过。
+- `preferences.spec.ts` 与 `photo-library-routes.spec.ts`：2 个通过。
+- `GET http://127.0.0.1:3999/api/admin/photo-library/tv-release`：返回当前 manifest/文件状态。
+- `GET http://127.0.0.1:5200/api/menu/all`：包含 `PhotoLibraryTvRelease`。
+- 后端 `app.controller.spec.ts` 与 `sqlite-photo.repository.spec.ts`：87 个测试通过。
+- 管理端 `vue-tsc --noEmit --skipLibCheck`：通过。
+- `corepack pnpm -F @wrjdyk/backend-api run build`：通过。
+- 管理端 Vite production build：通过，产物包含 `tv-release` JS/CSS chunk。
+- 浏览器访问旧首页 `/analytics`：自动进入 `/photo-library/photos`。
+- 浏览器侧栏：显示 `TV 版本管理`。
+- 浏览器访问 `/photo-library/tv-release`：页面正常显示当前发布状态和上传表单，接口数据加载成功，控制台无 error。
+
+后续计划：
+- 当前本地代码和运行态已统一，但这些改动仍未提交、未推送。
+- 下一步进入提交前差异检查；提交和推送需单独确认。
+- 推送后再验证 GitHub Actions、GHCR 镜像和飞牛部署，不能用本地验证代替线上发布验证。
+
+## 35. 2026-06-13 后台 1.0.5 与 Android TV 1.0.2 发布
+
+当前修改目标：
+- 将已完成的 AI 输出契约、TV 服务端磨砂图、TV 升级包管理和首页修复统一发布到 GitHub。
+- 管理端与后端镜像升级为 `1.0.5`，Android TV 升级为 `versionCode 7 / versionName 1.0.2`。
+- 生成一份可在现有设备覆盖安装的正式签名 APK，并验证远程更新 manifest、下载文件和完整性元数据。
+
+当前状态：
+- 已确认 `main` 与 `origin/main` 在发布前均为 `cb4f65125f96131d142e1ed24088ed2754f96702`，新功能仍在本地工作区。
+- 已将 GHCR 固定版本标签更新为 `1.0.5`。
+- 已将 Android TV 版本更新为 `7 / 1.0.2`。
+- 后端默认 APK 地址改为根据 manifest 的 `versionName` 动态生成，不再硬编码旧版 `1.0.1` 文件名。
+- 正式签名材料仅配置在 GitHub Actions；本地 release 构建用于编译验证，最终本地安装包使用 GitHub Release 的正式签名产物。
+- Windows 本地构建已将 `ANDROID_USER_HOME` 重定向到仓库内忽略目录，避免系统级 Android 偏好与 debug keystore 锁文件无写权限。
+
+本地验证：
+- Android manifest 脚本测试：3 项通过。
+- 后端 `app.controller.spec.ts` 与 `sqlite-photo.repository.spec.ts`：87 项通过。
+- 管理端首页与 TV 静态路由 Vitest：2 项通过。
+- 后端 Nest 构建、管理端 TypeScript/Vue 类型检查、管理端 Vite production build：通过。
+- `docker compose -f docker-compose.feiniu.yml config`：通过，展开版本为 `7 / 1.0.2`。
+- Android `testDebugUnitTest`、`assembleDebug`、`assembleRelease`：通过。
+- debug APK：`versionCode 7 / versionName 1.0.2`，大小 `11866855` bytes，SHA256 `5932EA236F7DD4A7622C06CE73099D7EFA20E1EF2FF293CF773C80E3860700E5`。
+- unsigned release APK：`versionCode 7 / versionName 1.0.2`，大小 `8611816` bytes，SHA256 `BA35D2D0496AA76B39C142DBD2C418F6E664D492E1F62F8A78074A6960C8882C`；签名验证明确失败，未作为发布包使用。
+
+后续修改计划：
+- 使用 `scripts/release/verify-local-release.ps1` 固化本地验证流程，避免重复尝试错误的前端/Android 构建命令。
+- 使用 `scripts/release/README.md` 作为后台/管理端推送、TV tag 发布、正式 APK 下载和升级接口回测的固定 checklist。
+- 本地发布脚本已验证可执行；脚本额外固定了仓库内 `.docker-config` 和 `ANDROID_USER_HOME`，避免反复触发用户目录权限错误。
+- 提交并推送 `main`，再推送 `tv-v1.0.2` 标签。
+- 等待 GHCR 与 Android TV Release 工作流完成，下载正式 APK 到本地并复核 SHA256、大小、版本和签名。
+- 使用正式 APK 验证后台上传接口、`/api/device/app-update/latest` 和 APK 下载链路。

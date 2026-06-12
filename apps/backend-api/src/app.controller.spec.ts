@@ -1,9 +1,10 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { NotFoundException, UnauthorizedException } from '@nestjs/common';
+import { BadRequestException, NotFoundException, UnauthorizedException } from '@nestjs/common';
 import {
   createReadStream,
   existsSync,
   mkdirSync,
+  readFileSync,
   readdirSync,
   rmSync,
   statSync,
@@ -146,7 +147,11 @@ describe('AppController', () => {
 
     it('derives the TV APK URL from the incoming host when no override exists', () => {
       const previousApkUrl = process.env.WRJDYK_TV_UPDATE_APK_URL;
+      const previousVersionCode = process.env.WRJDYK_TV_UPDATE_VERSION_CODE;
+      const previousVersionName = process.env.WRJDYK_TV_UPDATE_VERSION_NAME;
       delete process.env.WRJDYK_TV_UPDATE_APK_URL;
+      process.env.WRJDYK_TV_UPDATE_VERSION_CODE = '7';
+      process.env.WRJDYK_TV_UPDATE_VERSION_NAME = '1.0.2';
 
       try {
         expect(
@@ -157,10 +162,87 @@ describe('AppController', () => {
                 : undefined,
             protocol: 'http',
           } as never).data.apkUrl,
-        ).toBe('http://192.168.50.20:3999/releases/wangri-tv-1.0.1.apk');
+        ).toBe('http://192.168.50.20:3999/releases/wangri-tv-1.0.2.apk');
       } finally {
         restoreEnv('WRJDYK_TV_UPDATE_APK_URL', previousApkUrl);
+        restoreEnv('WRJDYK_TV_UPDATE_VERSION_CODE', previousVersionCode);
+        restoreEnv('WRJDYK_TV_UPDATE_VERSION_NAME', previousVersionName);
       }
+    });
+
+    it('uploads a TV APK release and serves it as the latest update manifest', () => {
+      const previousReleaseDir = process.env.WRJDYK_RELEASES_DIR;
+      const previousPublicPort = process.env.WRJDYK_BACKEND_PUBLIC_PORT;
+      const releaseDir = join(testDataDir, 'uploaded-releases');
+      mkdirSync(releaseDir, { recursive: true });
+      process.env.WRJDYK_RELEASES_DIR = releaseDir;
+      process.env.WRJDYK_BACKEND_PUBLIC_PORT = '3999';
+
+      try {
+        const uploaded = appController.uploadAdminTvReleasePackage(
+          {
+            forceUpdate: 'true',
+            releaseNotes: 'Fix TV playback blur on low-end boxes',
+            versionCode: '7',
+            versionName: '1.0.2',
+          },
+          {
+            buffer: Buffer.from('apk-v102'),
+            originalname: 'app-release.apk',
+            size: 8,
+          },
+        );
+
+        expect(uploaded).toEqual({
+          code: 0,
+          data: expect.objectContaining({
+            fileExists: true,
+            fileName: 'wangri-tv-1.0.2.apk',
+            manifest: expect.objectContaining({
+              apkUrl: '/releases/wangri-tv-1.0.2.apk',
+              forceUpdate: true,
+              releaseNotes: 'Fix TV playback blur on low-end boxes',
+              sha256: expect.stringMatching(/^[a-f0-9]{64}$/),
+              sizeBytes: 8,
+              versionCode: 7,
+              versionName: '1.0.2',
+            }),
+          }),
+        });
+        expect(existsSync(join(releaseDir, 'wangri-tv-1.0.2.apk'))).toBe(true);
+        expect(
+          JSON.parse(readFileSync(join(releaseDir, 'latest.json'), 'utf8')),
+        ).toMatchObject({
+          apkUrl: '/releases/wangri-tv-1.0.2.apk',
+          versionCode: 7,
+          versionName: '1.0.2',
+        });
+        expect(
+          appController.getTvAppUpdateManifest({
+            get: (name: string) =>
+              name.toLowerCase() === 'host'
+                ? '192.168.50.20:3999'
+                : undefined,
+            protocol: 'http',
+          } as never).data.apkUrl,
+        ).toBe('http://192.168.50.20:3999/releases/wangri-tv-1.0.2.apk');
+      } finally {
+        restoreEnv('WRJDYK_RELEASES_DIR', previousReleaseDir);
+        restoreEnv('WRJDYK_BACKEND_PUBLIC_PORT', previousPublicPort);
+        rmSync(releaseDir, { force: true, recursive: true });
+      }
+    });
+
+    it('rejects TV APK upload without a file', () => {
+      expect(() =>
+        appController.uploadAdminTvReleasePackage(
+          {
+            versionCode: '7',
+            versionName: '1.0.2',
+          },
+          undefined,
+        ),
+      ).toThrow(BadRequestException);
     });
 
     it('streams an APK from the configured releases directory', async () => {
@@ -234,7 +316,7 @@ describe('AppController', () => {
       expect(appController.getAdminUserInfo()).toEqual({
         code: 0,
         data: expect.objectContaining({
-          homePath: '/analytics',
+          homePath: '/photo-library/photos',
           realName: '往日重现管理员',
           username: 'admin',
         }),
@@ -743,7 +825,7 @@ describe('AppController', () => {
         existsSync(join(derivativeRoot, 'feiniu-95629', 'ai_720.webp')),
       ).toBe(true);
       expect(
-        existsSync(join(derivativeRoot, 'feiniu-95629', 'tv_4k.webp')),
+        existsSync(join(derivativeRoot, 'feiniu-95629', 'tv_blur_fill.webp')),
       ).toBe(true);
       expect(feiniuCenterItems).toEqual({
         code: 0,
@@ -1421,7 +1503,7 @@ describe('AppController', () => {
           album: expect.objectContaining({ title: '统一 AI 相册' }),
           derivative: expect.objectContaining({
             aiImageUrl: expect.stringMatching(/^data:image\/webp;base64,/),
-            tvImageUrl: '/api/derivatives/p_001/tv_4k.webp',
+            tvImageUrl: '/api/derivatives/p_001/tv_blur_fill.webp',
           }),
           item: expect.objectContaining({ photoId: 'p_001' }),
         }),
@@ -1443,9 +1525,9 @@ describe('AppController', () => {
           aiImageUrl: '/api/derivatives/p_001/ai_720.webp',
           fontStyle: 'handwriting',
           textColor: '#FFFFFF',
-          tvImageUrl: '/api/derivatives/p_001/tv_4k.webp',
+          tvImageUrl: '/api/derivatives/p_001/tv_blur_fill.webp',
         }),
-        displayImageUrl: '/api/derivatives/p_001/tv_4k.webp',
+        displayImageUrl: '/api/derivatives/p_001/tv_blur_fill.webp',
         layout: expect.objectContaining({
           position: 'right_bottom',
           safeArea: { h: 0.18, w: 0.34, x: 0.58, y: 0.7 },
@@ -1455,44 +1537,83 @@ describe('AppController', () => {
 
     it('normalizes the latest TV layout prompt typography shape for playback metadata', () => {
       const insight = normalizeUnifiedVisionResult({
-        beauty_score: 86.4,
-        caption: 'A warm family moment',
-        categories: ['family', 'daily'],
-        comment: '灯火还亮，笑声很长',
-        is_trash: false,
-        layout: {
-          mask_gradient: 'left_dark',
-          position_anchor: 'left_center',
-          safe_area: {
-            x_max: 46,
-            x_min: 8,
-            y_max: 62,
-            y_min: 30,
-          },
-          text_align: 'left',
-          text_color: '#FFFFFF',
+        schema_version: 'photo_tv_payload_v1',
+        classification: {
+          category: 'family',
+          scene_tags: ['family', 'daily'],
         },
-        memory_score: 92.6,
-        reason: 'Family subject is clear and emotionally valuable.',
-        typography: {
-          primary_text: {
-            content: '那年午后的光',
-            font_family: 'LXGW WenKai Screen',
-            weight: 'regular',
+        evaluation: {
+          beauty_score: 86.4,
+          memory_score: 92.6,
+          reason: 'Family subject is clear and emotionally valuable.',
+        },
+        narration_options: [
+          {
+            handwritten_thought: 'The room still feels bright',
+            lyrical_closure: 'A small day becomes a long memory',
+            scene_description: 'A warm family moment',
           },
-          secondary_text: {
-            content: '轻轻落在旧沙发上',
-            font_family: 'Source Han Serif CJK',
-            weight: 'light',
+          {
+            handwritten_thought: 'Tiny laughs stay close',
+            lyrical_closure: 'Home keeps the light for us',
+            scene_description: 'Soft light around the sofa',
+          },
+          {
+            handwritten_thought: 'This smile is enough',
+            lyrical_closure: 'Ordinary time turns gentle',
+            scene_description: 'Family faces gathered together',
+          },
+          {
+            handwritten_thought: 'Hold this afternoon',
+            lyrical_closure: 'The memory remains warm',
+            scene_description: 'Quiet happiness in the room',
+          },
+          {
+            handwritten_thought: 'A simple happy second',
+            lyrical_closure: 'It quietly becomes forever',
+            scene_description: 'Daily life with family warmth',
+          },
+        ],
+        photo_analysis: {
+          caption: 'A warm family moment',
+        },
+        selected_narration_index: 0,
+        tv_layout: {
+          layout: {
+            mask_gradient: 'left_dark',
+            position_anchor: 'left_center',
+            safe_area: {
+              x_max: 46,
+              x_min: 8,
+              y_max: 62,
+              y_min: 30,
+            },
+            text_align: 'left',
+            text_color: '#FFFFFF',
+          },
+          typography: {
+            primary_text: {
+              content: '那年午后的光',
+              font_family: 'LXGW WenKai Screen',
+              weight: 'regular',
+            },
+            secondary_text: {
+              content: '轻轻落在旧沙发上',
+              font_family: 'Source Han Serif CJK',
+              weight: 'light',
+            },
           },
         },
-        type: 'family,daily',
       });
 
       expect(insight).toEqual(
         expect.objectContaining({
           aiBeautyScore: 86,
-          aiComment: '灯火还亮，笑声很长',
+          aiComment: [
+            'A warm family moment',
+            'The room still feels bright',
+            'A small day becomes a long memory',
+          ].join('\n'),
           aiFontStyle: 'handwriting',
           aiLayoutPosition: 'center_safe',
           aiMemoryScore: 93,
@@ -1529,7 +1650,7 @@ describe('AppController', () => {
       expect(prompt).toContain('tv_layout');
     });
 
-    it('appends the standard output contract separately from the business prompt', () => {
+    it('appends the standard output contract after the business prompt as the final override', () => {
       const prompt = buildUnifiedVisionSystemPrompt({
         aiCheckIntervalMinutes: 60,
         apiKey: 'test-key',
@@ -1550,9 +1671,10 @@ describe('AppController', () => {
       expect(prompt).toContain('请按家庭相册的审美口径自由分析这张照片。');
       expect(prompt).toContain('【标准输出字段要求】');
       expect(prompt).toContain('必须返回 scores、narration_options、selected_narration_index 和 layout_plan。');
-      expect(prompt.indexOf('【标准输出字段要求】')).toBeLessThan(
-        prompt.indexOf('【业务提示词】'),
+      expect(prompt.indexOf('【业务提示词】')).toBeLessThan(
+        prompt.indexOf('【标准输出字段要求】'),
       );
+      expect(prompt).toContain('标准输出字段要求的优先级高于业务提示词中的任何输出示例');
     });
 
     it('rejects malformed photo_tv_payload_v1 responses instead of defaulting to completed AI', () => {
@@ -1564,6 +1686,48 @@ describe('AppController', () => {
           schema_version: 'photo_tv_payload_v1',
         }),
       ).toThrow(/photo_tv_payload_v1/i);
+    });
+
+    it('rejects legacy layout-only responses when the current three-part contract is missing', () => {
+      expect(() =>
+        normalizeUnifiedVisionResult({
+          analysis: {
+            chosen_space: 'blank bedding',
+            image_emotion: 'quiet',
+            subject_location: 'center left',
+          },
+          display_mode: {
+            photo_fit: 'cover',
+          },
+          handwriting: {
+            content: 'sweet dream',
+          },
+          layout: {
+            position_anchor: 'bottom_left',
+            safe_area: {
+              x_min: 10,
+              x_max: 90,
+              y_min: 10,
+              y_max: 90,
+            },
+          },
+          photo_meta: {
+            photo_id: 'feiniu-128454',
+          },
+          push_info: {
+            beauty_score: 75,
+            memory_score: 85,
+          },
+          typography: {
+            primary_text: {
+              content: 'nap time',
+            },
+            secondary_text: {
+              content: 'quiet dream',
+            },
+          },
+        }),
+      ).toThrow(/narration_options/i);
     });
 
     it('parses fenced JSON returned by the AI provider', () => {
@@ -1961,7 +2125,7 @@ describe('AppController', () => {
         title: 'TV 播放闭环相册',
       });
       expect(albumDetail.items).toHaveLength(1);
-      expect(albumDetail.items[0]?.displayImageUrl).toBe('/api/derivatives/p_001/tv_4k.webp');
+      expect(albumDetail.items[0]?.displayImageUrl).toBe('/api/derivatives/p_001/tv_blur_fill.webp');
       expect(playlist.items[0]).toMatchObject({
         ai: expect.objectContaining({
           commentStatus: 'completed',
@@ -1972,9 +2136,9 @@ describe('AppController', () => {
         }),
         display: expect.objectContaining({
           aiImageUrl: '/api/derivatives/p_001/ai_720.webp',
-          tvImageUrl: '/api/derivatives/p_001/tv_4k.webp',
+          tvImageUrl: '/api/derivatives/p_001/tv_blur_fill.webp',
         }),
-        displayImageUrl: '/api/derivatives/p_001/tv_4k.webp',
+        displayImageUrl: '/api/derivatives/p_001/tv_blur_fill.webp',
         layout: expect.objectContaining({
           safeArea: expect.any(Object),
         }),

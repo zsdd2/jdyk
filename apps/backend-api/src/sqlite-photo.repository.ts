@@ -1492,17 +1492,15 @@ export class SqlitePhotoRepository {
     const outputDir = join(this.derivativeRoot, normalizedPhotoId);
     const thumbPath = join(outputDir, 'thumb_300.webp');
     const aiPath = join(outputDir, 'ai_720.webp');
-    const tvPath = join(outputDir, 'tv_4k.webp');
-    if (!sourceInput && existsSync(aiPath)) {
+    const tvPath = join(outputDir, 'tv_blur_fill.webp');
+    if (!sourceInput && existsSync(aiPath) && existsSync(tvPath)) {
       const assets: PhotoDerivativeAssets = {
         aiImageUrl: derivativeUrl(normalizedPhotoId, 'ai_720.webp'),
         derivativeStatus: 'ready',
         thumbImageUrl: existsSync(thumbPath)
           ? derivativeUrl(normalizedPhotoId, 'thumb_300.webp')
           : withDerivativeProfile(row.thumbnail_300_url, 'thumb_300'),
-        tvImageUrl: existsSync(tvPath)
-          ? derivativeUrl(normalizedPhotoId, 'tv_4k.webp')
-          : withDerivativeProfile(row.tv_4k_webp_url, 'tv_4k_webp'),
+        tvImageUrl: derivativeUrl(normalizedPhotoId, 'tv_blur_fill.webp'),
       };
 
       this.getDatabase()
@@ -1575,14 +1573,14 @@ export class SqlitePhotoRepository {
     await Promise.all([
       ensureWebpDerivative(sourceInput ?? localSourcePath, thumbPath, 300, 78),
       ensureWebpDerivative(sourceInput ?? localSourcePath, aiPath, 720, 82),
-      ensureWebpDerivative(sourceInput ?? localSourcePath, tvPath, 3840, 86),
+      ensureTvBlurFillDerivative(sourceInput ?? localSourcePath, tvPath),
     ]);
 
     const assets: PhotoDerivativeAssets = {
       aiImageUrl: derivativeUrl(normalizedPhotoId, 'ai_720.webp'),
       derivativeStatus: 'ready',
       thumbImageUrl: derivativeUrl(normalizedPhotoId, 'thumb_300.webp'),
-      tvImageUrl: derivativeUrl(normalizedPhotoId, 'tv_4k.webp'),
+      tvImageUrl: derivativeUrl(normalizedPhotoId, 'tv_blur_fill.webp'),
     };
 
     this.getDatabase()
@@ -4188,6 +4186,50 @@ async function ensureWebpDerivative(
     .toFile(outputPath);
 }
 
+async function ensureTvBlurFillDerivative(
+  source: Buffer | string,
+  outputPath: string,
+): Promise<void> {
+  if (existsSync(outputPath) && statSync(outputPath).size > 0) return;
+
+  const background = await sharp(source)
+    .rotate()
+    .resize({
+      fit: 'cover',
+      height: 2160,
+      width: 3840,
+    })
+    .blur(42)
+    .modulate({ brightness: 0.82, saturation: 0.9 })
+    .webp({
+      effort: 4,
+      quality: 82,
+    })
+    .toBuffer();
+
+  const foreground = await sharp(source)
+    .rotate()
+    .resize({
+      fit: 'inside',
+      height: 2160,
+      withoutEnlargement: true,
+      width: 3840,
+    })
+    .webp({
+      effort: 4,
+      quality: 88,
+    })
+    .toBuffer();
+
+  await sharp(background)
+    .composite([{ gravity: 'center', input: foreground }])
+    .webp({
+      effort: 4,
+      quality: 86,
+    })
+    .toFile(outputPath);
+}
+
 function derivativeUrl(photoId: string, filename: string): string {
   return `/api/derivatives/${encodeURIComponent(photoId)}/${encodeURIComponent(filename)}`;
 }
@@ -4212,7 +4254,7 @@ function normalizePlaybackAlbumIds(values: string[]): string[] {
 
 function normalizeDerivativeFilename(value: string): string {
   const trimmedValue = value.trim();
-  return /^(thumb_300|ai_720|tv_4k)\.webp$/.test(trimmedValue)
+  return /^(thumb_300|ai_720|tv_4k|tv_blur_fill)\.webp$/.test(trimmedValue)
     ? trimmedValue
     : '';
 }

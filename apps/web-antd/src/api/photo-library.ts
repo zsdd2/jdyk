@@ -316,6 +316,24 @@ export interface UpdateTvDeviceInput {
   groupName?: string;
 }
 
+export interface TvReleaseManifest {
+  apkUrl: string;
+  forceUpdate: boolean;
+  publishedAt: string;
+  releaseNotes: string;
+  sha256: string;
+  sizeBytes: number;
+  versionCode: number;
+  versionName: string;
+}
+
+export interface TvReleaseInfo {
+  fileExists: boolean;
+  fileName: string;
+  manifest: TvReleaseManifest;
+  releasesDirectory: string;
+}
+
 export interface PhotoSourceConfig {
   activeSourceId: string;
   feiniu: FeiniuRuntimeConfig;
@@ -437,6 +455,17 @@ export function updateTvDeviceApi(deviceId: string, input: UpdateTvDeviceInput) 
       data: input,
       method: 'PATCH',
     },
+  );
+}
+
+export function getTvReleaseInfoApi() {
+  return requestClient.get<TvReleaseInfo>('/admin/photo-library/tv-release');
+}
+
+export function uploadTvReleasePackageApi(formData: FormData) {
+  return requestClient.post<TvReleaseInfo>(
+    '/admin/photo-library/tv-release/upload',
+    formData,
   );
 }
 

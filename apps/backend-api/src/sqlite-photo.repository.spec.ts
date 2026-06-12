@@ -602,9 +602,9 @@ describe('SqlitePhotoRepository', () => {
         aiImageUrl: '/api/derivatives/p_001/ai_720.webp',
         fontStyle: 'handwriting',
         textColor: '#FFFFFF',
-        tvImageUrl: '/api/derivatives/p_001/tv_4k.webp',
+        tvImageUrl: '/api/derivatives/p_001/tv_blur_fill.webp',
       }),
-      displayImageUrl: '/api/derivatives/p_001/tv_4k.webp',
+      displayImageUrl: '/api/derivatives/p_001/tv_blur_fill.webp',
       layout: expect.objectContaining({
         position: 'right_bottom',
         safeArea: { h: 0.18, w: 0.34, x: 0.58, y: 0.7 },
@@ -889,13 +889,14 @@ describe('SqlitePhotoRepository', () => {
       aiImageUrl: '/api/derivatives/p_001/ai_720.webp',
       derivativeStatus: 'ready',
       thumbImageUrl: '/api/derivatives/p_001/thumb_300.webp',
-      tvImageUrl: '/api/derivatives/p_001/tv_4k.webp',
+      tvImageUrl: '/api/derivatives/p_001/tv_blur_fill.webp',
     });
     expect(existsSync(join(derivativeRoot, 'p_001', 'thumb_300.webp'))).toBe(
       true,
     );
     expect(existsSync(join(derivativeRoot, 'p_001', 'ai_720.webp'))).toBe(true);
-    expect(existsSync(join(derivativeRoot, 'p_001', 'tv_4k.webp'))).toBe(true);
+    expect(existsSync(join(derivativeRoot, 'p_001', 'tv_blur_fill.webp'))).toBe(true);
+    expect(statSync(join(derivativeRoot, 'p_001', 'tv_blur_fill.webp')).size).toBeGreaterThan(0);
     expect(statSync(join(derivativeRoot, 'p_001', 'thumb_300.webp')).size).toBeGreaterThan(0);
     expect(photo).toMatchObject({
       derivativeStatus: 'ready',
@@ -904,9 +905,9 @@ describe('SqlitePhotoRepository', () => {
     expect(playlist[0]).toMatchObject({
       display: expect.objectContaining({
         aiImageUrl: '/api/derivatives/p_001/ai_720.webp',
-        tvImageUrl: '/api/derivatives/p_001/tv_4k.webp',
+        tvImageUrl: '/api/derivatives/p_001/tv_blur_fill.webp',
       }),
-      displayImageUrl: '/api/derivatives/p_001/tv_4k.webp',
+      displayImageUrl: '/api/derivatives/p_001/tv_blur_fill.webp',
       thumbnailUrl: '/api/derivatives/p_001/thumb_300.webp',
     });
   });

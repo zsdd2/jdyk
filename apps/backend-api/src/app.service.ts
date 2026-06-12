@@ -1,5 +1,13 @@
 import { Injectable, OnModuleDestroy } from '@nestjs/common';
-import { readFileSync } from 'node:fs';
+import { createHash } from 'node:crypto';
+import {
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  statSync,
+  writeFileSync,
+} from 'node:fs';
+import { join, resolve } from 'node:path';
 import { SqlitePhotoRepository } from './sqlite-photo.repository';
 import type { PhotoLibraryOverview, PhotoScanJob } from './sqlite-photo.repository';
 import type {
@@ -176,6 +184,22 @@ export interface TvAppUpdateManifest {
   sizeBytes: number;
   versionCode: number;
   versionName: string;
+}
+
+export interface TvReleaseInfo {
+  fileExists: boolean;
+  fileName: string;
+  manifest: TvAppUpdateManifest;
+  releasesDirectory: string;
+}
+
+export interface TvReleaseUploadInput {
+  buffer: Buffer;
+  forceUpdate?: boolean | string;
+  originalName?: string;
+  releaseNotes?: string;
+  versionCode?: number | string;
+  versionName?: string;
 }
 
 const realPhotoFiles = [
@@ -547,6 +571,9 @@ export class AppService implements OnModuleDestroy {
   }
 
   getTvAppUpdateManifest(): TvAppUpdateManifest {
+    const storedManifest = readTvReleaseManifest(this.getTvReleaseManifestPath());
+    if (storedManifest) return storedManifest;
+
     return {
       apkUrl: normalizeOptionalEnv(process.env.WRJDYK_TV_UPDATE_APK_URL),
       forceUpdate: normalizeBooleanEnv(process.env.WRJDYK_TV_UPDATE_FORCE),
@@ -557,6 +584,79 @@ export class AppService implements OnModuleDestroy {
       versionCode: normalizeIntegerEnv(process.env.WRJDYK_TV_UPDATE_VERSION_CODE),
       versionName: normalizeOptionalEnv(process.env.WRJDYK_TV_UPDATE_VERSION_NAME),
     };
+  }
+
+  getTvReleaseInfo(): TvReleaseInfo {
+    const releasesDirectory = this.getTvReleaseDirectory();
+    const manifest = this.getTvAppUpdateManifest();
+    const fileName = normalizeTvReleaseFileNameFromUrl(manifest.apkUrl);
+    const releasePath = fileName ? resolve(releasesDirectory, fileName) : '';
+    const fileExists = Boolean(
+      releasePath &&
+      releasePath.startsWith(`${releasesDirectory}${pathSeparator()}`) &&
+      existsSync(releasePath) &&
+      statSync(releasePath).isFile(),
+    );
+
+    return {
+      fileExists,
+      fileName,
+      manifest,
+      releasesDirectory,
+    };
+  }
+
+  uploadTvReleasePackage(input: TvReleaseUploadInput): TvReleaseInfo {
+    const versionCode = normalizeIntegerValue(input.versionCode);
+    const versionName = normalizeTvVersionName(input.versionName);
+    if (!versionCode) {
+      throw new Error('TV release versionCode must be a positive integer');
+    }
+    if (!versionName) {
+      throw new Error('TV release versionName is required');
+    }
+    if (!input.buffer || input.buffer.length === 0) {
+      throw new Error('TV release APK file is required');
+    }
+    if (input.originalName && !input.originalName.toLowerCase().endsWith('.apk')) {
+      throw new Error('TV release file must be an APK');
+    }
+
+    const releasesDirectory = this.getTvReleaseDirectory();
+    mkdirSync(releasesDirectory, { recursive: true });
+    const fileName = `wangri-tv-${versionName}.apk`;
+    const releasePath = resolve(releasesDirectory, fileName);
+    if (!releasePath.startsWith(`${releasesDirectory}${pathSeparator()}`)) {
+      throw new Error('Invalid TV release path');
+    }
+
+    writeFileSync(releasePath, input.buffer);
+    const manifest: TvAppUpdateManifest = {
+      apkUrl: `/releases/${fileName}`,
+      forceUpdate: normalizeBooleanValue(input.forceUpdate),
+      publishedAt: new Date().toISOString(),
+      releaseNotes: normalizeOptionalText(input.releaseNotes),
+      sha256: createHash('sha256').update(input.buffer).digest('hex'),
+      sizeBytes: input.buffer.length,
+      versionCode,
+      versionName,
+    };
+    writeFileSync(
+      this.getTvReleaseManifestPath(),
+      `${JSON.stringify(manifest, null, 2)}\n`,
+    );
+
+    return this.getTvReleaseInfo();
+  }
+
+  private getTvReleaseDirectory(): string {
+    return resolve(
+      process.env.WRJDYK_RELEASES_DIR?.trim() || join(process.cwd(), 'releases'),
+    );
+  }
+
+  private getTvReleaseManifestPath(): string {
+    return join(this.getTvReleaseDirectory(), 'latest.json');
   }
 
   getAlbums(
@@ -2439,10 +2539,11 @@ export function buildUnifiedVisionSystemPrompt(settings: AiRuntimeSettings): str
     return [
       '你是“往日重现”家庭影像展播系统的专业策展 AI。',
       '严格只输出一个 JSON 对象，不要 Markdown，不要解释，不要额外文字。',
-      '【标准输出字段要求】',
-      outputContractPrompt,
       '【业务提示词】',
       unifiedPrompt,
+      '【标准输出字段要求】',
+      '标准输出字段要求的优先级高于业务提示词中的任何输出示例；如果业务提示词中出现其他 JSON 示例，只能作为业务判断参考，不得照抄其字段结构。',
+      outputContractPrompt,
       '再次确认：最终只输出一个可被 JSON.parse 直接解析的 JSON 对象，不要 Markdown，不要代码块，不要解释。',
     ].join('\n');
   }
@@ -2530,6 +2631,11 @@ export function normalizeUnifiedVisionResult(value: unknown): UnifiedAiInsight {
   ) {
     return normalizePhotoTvPayloadV1(record);
   }
+  if (isLegacyLayoutOnlyResponse(record)) {
+    throw new Error(
+      'Invalid current AI response: missing scores, narration_options, selected_narration_index, layout_plan',
+    );
+  }
   const layout = record.layout && typeof record.layout === 'object'
     ? record.layout as Record<string, unknown>
     : {};
@@ -2612,6 +2718,23 @@ export function normalizeUnifiedVisionResult(value: unknown): UnifiedAiInsight {
     aiTags: categories.length > 0 ? categories : ['回忆'],
     aiTextColor: '#FFFFFF',
   };
+}
+
+function isLegacyLayoutOnlyResponse(record: Record<string, unknown>): boolean {
+  const hasLegacyTvLayoutShape = Boolean(
+    record.display_mode ||
+    record.typography ||
+    record.handwriting ||
+    record.photo_meta ||
+    record.push_info,
+  );
+  const hasCurrentThreePartContract = Boolean(
+    record.scores &&
+    record.narration_options &&
+    record.selected_narration_index !== undefined &&
+    record.layout_plan,
+  );
+  return hasLegacyTvLayoutShape && !hasCurrentThreePartContract;
 }
 
 function buildPhotoTvVisionUserPrompt(input: UnifiedVisionAiInput): string {
@@ -3179,6 +3302,66 @@ function normalizeIntegerEnv(value?: string): number {
 function normalizeBooleanEnv(value?: string): boolean {
   const normalized = value?.trim().toLowerCase();
   return normalized === '1' || normalized === 'true' || normalized === 'yes';
+}
+
+function readTvReleaseManifest(manifestPath: string): TvAppUpdateManifest | null {
+  if (!existsSync(manifestPath)) return null;
+  try {
+    const parsed = JSON.parse(readFileSync(manifestPath, 'utf8')) as unknown;
+    const record = parsed && typeof parsed === 'object'
+      ? parsed as Record<string, unknown>
+      : {};
+    const versionCode = normalizeIntegerValue(record.versionCode);
+    const versionName = normalizeTvVersionName(record.versionName);
+    const apkUrl = normalizeOptionalText(record.apkUrl);
+    if (!versionCode || !versionName || !apkUrl) return null;
+    return {
+      apkUrl,
+      forceUpdate: normalizeBooleanValue(record.forceUpdate),
+      publishedAt: normalizeOptionalText(record.publishedAt),
+      releaseNotes: normalizeOptionalText(record.releaseNotes),
+      sha256: normalizeOptionalText(record.sha256),
+      sizeBytes: normalizeIntegerValue(record.sizeBytes),
+      versionCode,
+      versionName,
+    };
+  } catch {
+    return null;
+  }
+}
+
+function normalizeIntegerValue(value: unknown): number {
+  const parsed = typeof value === 'number'
+    ? value
+    : typeof value === 'string'
+      ? Number(value)
+      : Number.NaN;
+  return Number.isFinite(parsed) && parsed > 0 ? Math.floor(parsed) : 0;
+}
+
+function normalizeBooleanValue(value: unknown): boolean {
+  if (typeof value === 'boolean') return value;
+  if (typeof value !== 'string') return false;
+  const normalized = value.trim().toLowerCase();
+  return normalized === '1' || normalized === 'true' || normalized === 'yes' || normalized === 'on';
+}
+
+function normalizeOptionalText(value: unknown): string {
+  return typeof value === 'string' ? value.trim() : '';
+}
+
+function normalizeTvVersionName(value: unknown): string {
+  const normalized = normalizeOptionalText(value).replace(/[^A-Za-z0-9._-]/g, '_');
+  return normalized.slice(0, 48);
+}
+
+function normalizeTvReleaseFileNameFromUrl(value: string): string {
+  const lastSegment = value.split(/[\\/]/).pop()?.split('?')[0]?.trim() ?? '';
+  return /^[A-Za-z0-9._-]+\.apk$/.test(lastSegment) ? lastSegment : '';
+}
+
+function pathSeparator(): '\\' | '/' {
+  return process.platform === 'win32' ? '\\' : '/';
 }
 
 function normalizePhotoCenterStatus(

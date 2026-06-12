@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   Body,
   Controller,
   Delete,
@@ -14,7 +15,10 @@ import {
   Res,
   StreamableFile,
   UnauthorizedException,
+  UploadedFile,
+  UseInterceptors,
 } from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
 import { createReadStream, existsSync, statSync } from 'fs';
 import { join, resolve } from 'path';
 import type { Request, Response } from 'express';
@@ -52,6 +56,12 @@ import type {
   PhotoSourceAsset,
 } from './photo-sources/photo-source';
 
+interface UploadedApkFile {
+  buffer?: Buffer;
+  originalname?: string;
+  size?: number;
+}
+
 function getRequestProtocol(request?: Request): string {
   const forwardedProtocol = request?.get('x-forwarded-proto')?.split(',')[0]?.trim();
   return forwardedProtocol || request?.protocol || 'http';
@@ -66,6 +76,16 @@ function getRequestHostname(request?: Request): string {
   } catch {
     return host.replace(/:\d+$/, '');
   }
+}
+
+function resolveReleaseApkUrl(apkUrl: string, request?: Request): string {
+  if (/^https?:\/\//i.test(apkUrl)) return apkUrl;
+  const protocol = getRequestProtocol(request);
+  const hostname = getRequestHostname(request);
+  const backendPort =
+    process.env.WRJDYK_BACKEND_PUBLIC_PORT?.trim() || '3999';
+  const path = apkUrl.startsWith('/') ? apkUrl : `/${apkUrl}`;
+  return `${protocol}://${hostname}:${backendPort}${path}`;
 }
 
 @Controller()
@@ -103,17 +123,13 @@ export class AppController {
   @Get('device/app-update/latest')
   getTvAppUpdateManifest(@Req() request?: Request) {
     const manifest = this.appService.getTvAppUpdateManifest();
-    const protocol = getRequestProtocol(request);
-    const hostname = getRequestHostname(request);
-    const backendPort =
-      process.env.WRJDYK_BACKEND_PUBLIC_PORT?.trim() || '3999';
+    const apkUrl =
+      manifest.apkUrl || `/releases/wangri-tv-${manifest.versionName}.apk`;
     return {
       code: 0,
       data: {
         ...manifest,
-        apkUrl:
-          manifest.apkUrl ||
-          `${protocol}://${hostname}:${backendPort}/releases/wangri-tv-1.0.1.apk`,
+        apkUrl: resolveReleaseApkUrl(apkUrl, request),
       },
     };
   }
@@ -196,7 +212,7 @@ export class AppController {
       data: {
         avatar: '',
         desc: '往日重现本地管理后台',
-        homePath: '/analytics',
+        homePath: '/photo-library/photos',
         realName: '往日重现管理员',
         roles: ['admin'],
         token: 'wrjdyk_admin_admin',
@@ -288,6 +304,15 @@ export class AppController {
               path: '/photo-library/devices',
             },
             {
+              component: '/photo-library/tv-release/index',
+              meta: {
+                icon: 'lucide:upload-cloud',
+                title: 'TV 版本管理',
+              },
+              name: 'PhotoLibraryTvRelease',
+              path: '/photo-library/tv-release',
+            },
+            {
               component: '/photo-library/scan/index',
               meta: {
                 icon: 'lucide:folder-search',
@@ -319,6 +344,49 @@ export class AppController {
         },
       ],
     };
+  }
+
+  @Get('admin/photo-library/tv-release')
+  getAdminTvReleaseInfo() {
+    return {
+      code: 0,
+      data: this.appService.getTvReleaseInfo(),
+    };
+  }
+
+  @Post('admin/photo-library/tv-release/upload')
+  @UseInterceptors(FileInterceptor('file', { limits: { fileSize: 300 * 1024 * 1024 } }))
+  uploadAdminTvReleasePackage(
+    @Body()
+    input: {
+      forceUpdate?: string;
+      releaseNotes?: string;
+      versionCode?: string;
+      versionName?: string;
+    },
+    @UploadedFile() file?: UploadedApkFile,
+  ) {
+    if (!file?.buffer || file.buffer.length === 0) {
+      throw new BadRequestException('APK file is required');
+    }
+
+    try {
+      return {
+        code: 0,
+        data: this.appService.uploadTvReleasePackage({
+          buffer: file.buffer,
+          forceUpdate: input.forceUpdate,
+          originalName: file.originalname,
+          releaseNotes: input.releaseNotes,
+          versionCode: input.versionCode,
+          versionName: input.versionName,
+        }),
+      };
+    } catch (error) {
+      throw new BadRequestException(
+        error instanceof Error ? error.message : 'Invalid TV release package',
+      );
+    }
   }
 
   @Get('admin/photo-library/overview')

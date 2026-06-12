@@ -34,7 +34,7 @@ GitHub 仓库需要一次性配置以下 Actions Secrets：
 修改 `.github/workflows/ghcr-images.yml` 中的固定镜像标签：
 
 ```yaml
-type=raw,value=1.0.4
+type=raw,value=1.0.5
 ```
 
 `main` 分支发布时会同时更新 `latest`。版本标签用于回滚，`latest` 用于飞牛日常更新。
@@ -44,8 +44,8 @@ type=raw,value=1.0.4
 在 `apps/android-tv/app/build.gradle` 中同时递增：
 
 ```groovy
-versionCode 6
-versionName '1.0.1'
+versionCode 7
+versionName '1.0.2'
 ```
 
 然后同步以下文件中的远程更新默认值和说明：
@@ -55,7 +55,7 @@ versionName '1.0.1'
 - `apps/android-tv/README.md`
 - `docs/FEINIU_DEPLOYMENT.md`
 
-TV 标签格式固定为 `tv-v<versionName>`，例如 `tv-v1.0.1`。
+TV 标签格式固定为 `tv-v<versionName>`，例如 `tv-v1.0.2`。
 
 ## 3. 本地验证
 
@@ -77,6 +77,7 @@ docker compose -f docker-compose.feiniu.yml config
 $env:JAVA_HOME='F:\Java\OpenJDK17U-jdk_x64_windows_hotspot_17.0.19_10\jdk-17.0.19+10'
 $env:ANDROID_HOME='F:\Android\Sdk'
 $env:ANDROID_SDK_ROOT='F:\Android\Sdk'
+$env:ANDROID_USER_HOME="$PWD\.android-home"
 $env:GRADLE_USER_HOME="$PWD\.gradle-android-home-update"
 Set-Location apps\android-tv
 .\gradlew.bat :app:assembleDebug --no-daemon
@@ -125,8 +126,8 @@ docker manifest inspect ghcr.io/zsdd2/jdyk-backend:<version>
 先确认四个签名 Secret 已配置，再创建并推送标签：
 
 ```powershell
-git tag tv-v1.0.1
-git push origin tv-v1.0.1
+git tag tv-v1.0.2
+git push origin tv-v1.0.2
 ```
 
 `.github/workflows/android-tv-release.yml` 将执行：
@@ -158,8 +159,8 @@ docker compose --env-file .env.feiniu -f docker-compose.feiniu.yml up -d --force
 
 ```sh
 curl -fL \
-  -o data/releases/wangri-tv-1.0.1.apk \
-  https://github.com/zsdd2/jdyk/releases/download/tv-v1.0.1/wangri-tv-1.0.1.apk
+  -o data/releases/wangri-tv-1.0.2.apk \
+  https://github.com/zsdd2/jdyk/releases/download/tv-v1.0.2/wangri-tv-1.0.2.apk
 ```
 
 将 Release 中 `latest.json` 对应的值写入 `.env.feiniu`：
@@ -184,8 +185,8 @@ curl -f http://127.0.0.1:3999/api/health
 curl -f http://127.0.0.1:5200/healthz
 curl -f http://127.0.0.1:5200/api/health
 curl -f http://127.0.0.1:3999/api/device/app-update/latest
-curl -I http://127.0.0.1:3999/releases/wangri-tv-1.0.1.apk
-sha256sum data/releases/wangri-tv-1.0.1.apk
+curl -I http://127.0.0.1:3999/releases/wangri-tv-1.0.2.apk
+sha256sum data/releases/wangri-tv-1.0.2.apk
 ```
 
 确认更新接口中的 `versionCode`、`versionName`、`sha256` 和 `sizeBytes` 与 GitHub Release 一致。最后由电视端“检查更新”验证下载、校验和系统安装唤起。

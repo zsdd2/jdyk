@@ -48,6 +48,15 @@ const routes: RouteRecordRaw[] = [
         path: '/photo-library/devices',
       },
       {
+        component: () => import('#/views/photo-library/tv-release/index.vue'),
+        meta: {
+          icon: 'lucide:upload-cloud',
+          title: 'TV 版本管理',
+        },
+        name: 'PhotoLibraryTvRelease',
+        path: '/photo-library/tv-release',
+      },
+      {
         component: () => import('#/views/photo-library/scan/index.vue'),
         meta: {
           icon: 'lucide:folder-search',

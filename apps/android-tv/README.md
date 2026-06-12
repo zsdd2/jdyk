@@ -15,6 +15,7 @@
 $env:JAVA_HOME='F:\Java\OpenJDK17U-jdk_x64_windows_hotspot_17.0.19_10\jdk-17.0.19+10'
 $env:ANDROID_HOME='F:\Android\Sdk'
 $env:ANDROID_SDK_ROOT='F:\Android\Sdk'
+$env:ANDROID_USER_HOME='F:\xinxiangmu\jdyk\.android-home'
 $env:GRADLE_USER_HOME='F:\xinxiangmu\jdyk\.gradle-android-home-update'
 .\gradlew.bat :app:assembleDebug
 ```
@@ -46,16 +47,16 @@ TV 端规则：
 - 通过 `FileProvider` 授权给系统安装器安装。
 - 播放设置菜单中的“检查更新”可手动触发。
 
-## Version 1.0.1
+## Version 1.0.2
 
-- `versionCode`: `6`
-- `versionName`: `1.0.1`
+- `versionCode`: `7`
+- `versionName`: `1.0.2`
 - Update manifest:
   `http://<Feiniu-IP>:3999/api/device/app-update/latest`
 - Primary APK:
-  `http://<Feiniu-IP>:3999/releases/wangri-tv-1.0.1.apk`
+  `http://<Feiniu-IP>:3999/releases/wangri-tv-1.0.2.apk`
 - Backup release:
-  `https://github.com/zsdd2/jdyk/releases/tag/tv-v1.0.1`
+  `https://github.com/zsdd2/jdyk/releases/tag/tv-v1.0.2`
 
 The production APK must be built by the Android TV release workflow with the
 four `ANDROID_TV_*` signing secrets. Do not publish

@@ -91,6 +91,8 @@ apps/backend-api/.test-data
 
 # Android local build outputs
 .gradle-android-home*
+.android-home/
+.docker-config/
 apps/android-tv/.gradle-test-home
 apps/android-tv/.gradle
 apps/android-tv/build
