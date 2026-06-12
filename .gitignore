@@ -34,6 +34,7 @@ package-lock.json
 !.env.example
 !.env.feiniu.example
 !**/.env.example
+!apps/web-antd/.env.production
 .env.local
 .env.*.local
 .eslintcache

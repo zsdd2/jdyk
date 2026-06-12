@@ -1010,3 +1010,34 @@ GHCR 第七次发布跟进：
 - 运行控制器测试、后端构建和 Compose 展开验证。
 - 推送 `main` 更新 `latest` 双镜像。
 - 在飞牛只更新 Compose 和 `.env`，拉取 `latest` 后验证动态地址。
+
+## 26. 2026-06-12 飞牛管理端登录 405 修复与 1.0.2 发布
+
+当前修改目标：
+- 修复飞牛管理端登录请求错误发送到 `/auth/login`，被 Nginx 静态站点返回 405 的问题。
+- 发布 `1.0.2` 与新的 `latest` 管理端、后端双架构镜像。
+
+根因：
+- 管理端生产运行时配置依赖 `apps/web-antd/.env.production` 生成
+  `_app-config-*.js`。
+- 仓库的通用 `.gitignore` 规则 `**/.env.*` 排除了该非敏感生产配置文件，
+  GitHub Actions 构建时因此得到空的 `VITE_GLOB_API_URL`。
+- Axios 最终将登录请求发送到同源 `/auth/login`，而不是 Nginx 代理的
+  `/api/auth/login`。
+
+当前状态：
+- 已新增生产配置缺失时 API 基址必须回退到 `/api` 的回归测试。
+- 管理端请求客户端已增加同源 `/api` 默认值。
+- `.gitignore` 已明确允许跟踪 `apps/web-antd/.env.production`。
+- GHCR 固定版本标签已更新为 `1.0.2`。
+- 定向 Vitest 回归测试通过：1 个测试通过。
+- 管理端 TypeScript/Vue 类型检查通过。
+- 管理端生产构建通过：7884 个模块完成转换。
+- 生成的 `_app-config-*.js` 已确认包含
+  `VITE_GLOB_API_URL=/api`。
+- 飞牛当前服务已确认 `/api/auth/login` 返回 201，
+  `/api/health` 返回 200；故障仅存在于旧管理端静态资源请求路径。
+
+后续计划：
+- 提交并推送 `main`，等待 GHCR 双架构镜像发布完成。
+- 飞牛拉取新的 `latest` 后，验证登录请求为 `/api/auth/login` 且登录成功。
