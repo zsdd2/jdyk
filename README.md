@@ -36,3 +36,8 @@ corepack pnpm dev:tv
 - `GET /api/photos/:photoId/thumb`
 
 电视端会拉取样例播放列表，自动全屏播放并上报播放记录。后续再把样例数据替换为真实 NAS 扫描结果。
+
+## 部署与发布
+
+- [飞牛 Docker Compose 部署](docs/FEINIU_DEPLOYMENT.md)
+- [管理端、后端与 Android TV 发布办法](docs/RELEASE_GUIDE.md)

@@ -1129,9 +1129,28 @@ GHCR 第七次发布跟进：
 - `apps/web-antd/node_modules/.bin/vite.CMD build --mode production`：通过。
 - `node --test scripts/android-tv/generate-update-manifest.test.mjs`：3 个测试通过。
 - `docker compose -f docker-compose.feiniu.yml config`：通过，展开后 TV 更新版本为 `6 / 1.0.1`，飞牛地址为空。
-- Android 本地 Gradle 构建未完成：本机只有 JDK 11，当前 Android Gradle 插件要求 Java 17；需要由 GitHub Actions 的 Java 17 环境继续验证 release APK。
+- Android 本地 Gradle 构建已使用仓库约定的 JDK 17 完成：`assembleDebug` 和 `assembleRelease` 均通过；无正式签名变量时生成的 `app-release-unsigned.apk` 仅用于编译验证，不得发布。
 
 下一步计划：
 - 提交并推送 `main`，触发 GHCR `latest` 镜像发布。
 - 推送 `tv-v1.0.1` 标签触发 Android TV Release workflow，生成 `wangri-tv-1.0.1.apk`、SHA256、sizeBytes 和 `latest.json`。
 - GitHub Actions 完成后，用 release 产物更新飞牛 `/workspace/releases` 中的 APK 和 Compose 环境变量，再由用户在电视端实际验证远程升级安装。
+
+## 30. 2026-06-12 Android TV 1.0.1 本地发布验证与发布办法
+
+当前修改目标：
+- 补全 Android TV 1.0.1 的本地 JDK 17 构建验证。
+- 将本次实际跑通的 GHCR 双架构发布、TV 签名发布和飞牛远程更新流程整理为可复用文档。
+
+当前状态：
+- `:app:assembleDebug --no-daemon` 构建成功，生成 `app-debug.apk`。
+- `:app:assembleRelease --no-daemon` 构建成功，生成版本 `versionCode 6 / versionName 1.0.1` 的 `app-release-unsigned.apk`。
+- 未签名 Release APK 大小为 `8611816` 字节，SHA256 为 `1853BBFC258AEE89F8B14B2B04E3904ADC8D63CEAF940AB3399E764396AC2B84`；该值只记录本地编译证据，不作为正式更新元数据。
+- GitHub Android TV Release 工作流已确认当前唯一阻塞为缺少四个 `ANDROID_TV_*` 签名 Secret；代码构建本身已通过本地 Debug 和 Release 验证。
+- 新增 `docs/RELEASE_GUIDE.md`，覆盖版本修改、本地验证、GHCR 发布、TV 签名发布、飞牛部署、远程更新验证和回滚。
+- README 已增加飞牛部署与发布办法入口；飞牛部署文档中的旧 TV Release 标签已修正为 `tv-v1.0.1`。
+
+后续计划：
+- 使用历史正式签名证书配置 GitHub Actions Secrets，重新运行 `tv-v1.0.1` 发布工作流。
+- 确认 GitHub Release 生成签名 APK、`latest.json` 和 `feiniu-update.env`。
+- 将正式 APK 和更新元数据部署到飞牛，由用户在电视端执行一次远程更新验收。
