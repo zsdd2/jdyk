@@ -1154,3 +1154,22 @@ GHCR 第七次发布跟进：
 - 使用历史正式签名证书配置 GitHub Actions Secrets，重新运行 `tv-v1.0.1` 发布工作流。
 - 确认 GitHub Release 生成签名 APK、`latest.json` 和 `feiniu-update.env`。
 - 将正式 APK 和更新元数据部署到飞牛，由用户在电视端执行一次远程更新验收。
+
+## 31. 2026-06-12 Android TV 1.0.1 签名恢复与 Linux Wrapper 修复
+
+当前修改目标：
+- 找回可覆盖旧版 APK 的原签名材料并恢复 GitHub 自动签名发布。
+- 修复 Android TV GitHub Actions 在 Linux Runner 中找不到 `gradlew` 的问题。
+
+当前状态：
+- 已确认旧版 `releases/wangri-tv-1.0.apk` 使用 Android Debug 证书，SHA-256 指纹为 `B8:8D:6F:AC:90:14:FA:4E:70:2D:AA:BC:E0:D2:58:00:46:AE:9E:6D:0B:16:91:41:2D:36:E0:FB:ED:3C:E9:AA`。
+- 已找到对应的 `C:\Android\.android\debug.keystore`，并备份到仓库外 `F:\secure\jdyk\android-tv-release.keystore`。
+- 本地签名 Release APK 构建成功，新 APK 与旧 APK 的证书指纹完全一致，可以直接覆盖安装。
+- 四个 `ANDROID_TV_*` GitHub Actions Secrets 已配置；第 2 次工作流已通过 Secret 校验和 keystore 恢复。
+- 第 2 次工作流失败根因是仓库只跟踪了 `gradlew.bat`，未跟踪 Linux Runner 需要的 `apps/android-tv/gradlew`。
+- 已使用 Gradle 8.9 Wrapper 任务生成标准 Unix 脚本，并分别用 PowerShell 与 Git Bash 验证 `gradlew.bat --version` 和 `./gradlew --version` 成功。
+
+后续计划：
+- 提交并推送完整 Gradle Wrapper 文件。
+- 将尚未成功发布的 `tv-v1.0.1` 标签移动到 Wrapper 修复提交并重新触发工作流。
+- 验证 GitHub Release 的签名 APK、更新 manifest、证书指纹和下载地址。

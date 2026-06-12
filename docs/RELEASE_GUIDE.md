@@ -7,6 +7,7 @@
 - 工作分支已合并到 `main`，且 `git status --short` 为空。
 - Node.js、Corepack、Docker、GitHub CLI 可用。
 - Android TV 本地构建使用 JDK 17 和 Android SDK。
+- `apps/android-tv/gradlew`、`gradlew.bat` 和 `gradle/wrapper/*` 必须被 Git 跟踪；GitHub Runner 使用 Linux 版 `gradlew`。
 - 正式 TV APK 必须使用历史发布使用的同一套签名证书。已有设备安装过正式版时，不得临时生成新证书替代。
 
 GitHub 仓库需要一次性配置以下 Actions Secrets：
@@ -205,6 +206,8 @@ GHCR 使用 QEMU 构建 `linux/arm64`，通常明显慢于 `amd64`。只要 Acti
 ### TV APK 能编译但 Release 发布失败
 
 先看失败步骤。`Validate signing secrets` 失败表示签名配置缺失；`assembleRelease` 失败才是编译或资源问题。未签名 APK 不能替代正式产物。
+
+如果日志显示 `chmod: cannot access 'gradlew'`，说明 Unix Gradle Wrapper 没有被提交。执行 `gradlew.bat wrapper` 生成标准脚本，将 `gradlew`、`gradlew.bat` 和 `gradle/wrapper/*` 一并提交，并确认 `gradlew` 具有可执行位。
 
 ### 回滚镜像
 
