@@ -71,6 +71,8 @@ import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.TextRange
+import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
@@ -918,6 +920,7 @@ private fun TvBackendLoginScreen(
   statusText: String,
   username: String,
 ) {
+  val protocolFocus = remember { FocusRequester() }
   val serverFocus = remember { FocusRequester() }
   val usernameFocus = remember { FocusRequester() }
   val passwordFocus = remember { FocusRequester() }
@@ -933,6 +936,10 @@ private fun TvBackendLoginScreen(
     useHttps = nextHttps
     hostPort = nextHostPort
     onServerUrlChange("${if (nextHttps) "https" else "http"}://${nextHostPort.trim()}")
+  }
+
+  LaunchedEffect(Unit) {
+    serverFocus.requestFocusWhenReady()
   }
 
   TvShell {
@@ -1017,7 +1024,7 @@ private fun TvBackendLoginScreen(
           Spacer(modifier = Modifier.height(8.dp))
           Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             ProtocolChip(
-              focusedRequester = serverFocus,
+              focusedRequester = protocolFocus,
               protocol = if (useHttps) "https://" else "http://",
               onToggle = { updateServerUrl(!useHttps) },
             )
@@ -1049,7 +1056,7 @@ private fun TvBackendLoginScreen(
             onMoveDown = { passwordFocus.requestFocus() },
             onMoveUp = { serverFocus.requestFocus() },
             onValueChange = onUsernameChange,
-            upFocusRequester = usernameFocus,
+            upFocusRequester = serverFocus,
             value = username,
           )
           Spacer(modifier = Modifier.height(if (wide) 12.dp else 16.dp))
@@ -1966,6 +1973,14 @@ private fun GlassLoginField(
   value: String,
 ) {
   var focused by remember { mutableStateOf(false) }
+  var fieldValue by remember {
+    mutableStateOf(TextFieldValue(value, selection = TextRange(value.length)))
+  }
+  LaunchedEffect(value) {
+    if (value != fieldValue.text) {
+      fieldValue = TextFieldValue(value, selection = TextRange(value.length))
+    }
+  }
   Row(
     modifier = modifier
       .fillMaxWidth()
@@ -2000,8 +2015,11 @@ private fun GlassLoginField(
       Spacer(modifier = Modifier.width(12.dp))
     }
     BasicTextField(
-      value = value,
-      onValueChange = onValueChange,
+      value = fieldValue,
+      onValueChange = {
+        fieldValue = it
+        if (it.text != value) onValueChange(it.text)
+      },
       singleLine = true,
       textStyle = TextStyle(color = Color.White, fontSize = 15.sp, fontWeight = FontWeight.Medium),
       visualTransformation = if (password) PasswordVisualTransformation() else VisualTransformation.None,
@@ -2291,12 +2309,23 @@ private fun TvInputField(
   value: String,
 ) {
   var focused by remember { mutableStateOf(false) }
+  var fieldValue by remember {
+    mutableStateOf(TextFieldValue(value, selection = TextRange(value.length)))
+  }
+  LaunchedEffect(value) {
+    if (value != fieldValue.text) {
+      fieldValue = TextFieldValue(value, selection = TextRange(value.length))
+    }
+  }
   Column {
     BasicText(text = label, style = TextStyle(color = mutedText, fontSize = 12.sp))
     Spacer(modifier = Modifier.height(5.dp))
     BasicTextField(
-      value = value,
-      onValueChange = onValueChange,
+      value = fieldValue,
+      onValueChange = {
+        fieldValue = it
+        if (it.text != value) onValueChange(it.text)
+      },
       singleLine = true,
       textStyle = TextStyle(color = warmText, fontSize = 14.sp),
       visualTransformation = if (password) PasswordVisualTransformation() else VisualTransformation.None,
@@ -2319,14 +2348,6 @@ private fun TvInputField(
             Key.DirectionDown -> {
               onMoveDown?.invoke()
               onMoveDown != null
-            }
-            Key.DirectionLeft -> {
-              onMoveLeft?.invoke()
-              onMoveLeft != null
-            }
-            Key.DirectionRight -> {
-              onMoveRight?.invoke()
-              onMoveRight != null
             }
             Key.DirectionUp -> {
               onMoveUp?.invoke()

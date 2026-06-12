@@ -155,10 +155,60 @@ describe('SqlitePhotoRepository', () => {
           name: 'default_ai_output_contract_prompt',
           version: 15,
         },
+        {
+          name: 'feiniu_settings',
+          version: 16,
+        },
       ]);
     } finally {
       database.close();
     }
+  });
+
+  it('persists Feiniu connection settings without exposing the password', () => {
+    repository = new SqlitePhotoRepository({
+      databasePath,
+      photoRoot,
+    });
+
+    repository.initialize();
+
+    expect(repository.getFeiniuSettings()).toMatchObject({
+      baseUrl: '',
+      passwordConfigured: false,
+      username: '',
+    });
+
+    const saved = repository.updateFeiniuSettings({
+      baseUrl: ' http://nas.local:60000/ ',
+      password: ' secret ',
+      username: ' fn-user ',
+    });
+
+    expect(saved).toMatchObject({
+      baseUrl: 'http://nas.local:60000/',
+      passwordConfigured: true,
+      username: 'fn-user',
+    });
+    expect(repository.getFeiniuRuntimeSettings()).toMatchObject({
+      baseUrl: 'http://nas.local:60000/',
+      password: 'secret',
+      username: 'fn-user',
+    });
+
+    const updated = repository.updateFeiniuSettings({
+      baseUrl: 'http://nas.local:60001',
+      keepPassword: true,
+      password: '',
+      username: 'fn-user-2',
+    });
+
+    expect(updated).toMatchObject({
+      baseUrl: 'http://nas.local:60001',
+      passwordConfigured: true,
+      username: 'fn-user-2',
+    });
+    expect(repository.getFeiniuRuntimeSettings().password).toBe('secret');
   });
 
   it('does not seed demo photo records when the demo files are missing', () => {

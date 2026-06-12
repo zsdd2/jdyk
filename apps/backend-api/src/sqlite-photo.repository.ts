@@ -211,6 +211,24 @@ export interface UpdateAiSettingsInput {
   scoringPrompt?: string;
 }
 
+export interface FeiniuSettings {
+  baseUrl: string;
+  passwordConfigured: boolean;
+  updatedAt: string;
+  username: string;
+}
+
+export interface FeiniuRuntimeSettings extends FeiniuSettings {
+  password: string;
+}
+
+export interface UpdateFeiniuSettingsInput {
+  baseUrl?: string;
+  keepPassword?: boolean;
+  password?: string;
+  username?: string;
+}
+
 export interface CreatePlaybackAlbumInput {
   aiDailyLimit?: number;
   aiEnabled?: boolean;
@@ -502,6 +520,13 @@ interface AiSettingsRow {
   updated_at: string;
 }
 
+interface FeiniuSettingsRow {
+  base_url: string;
+  password: string;
+  updated_at: string;
+  username: string;
+}
+
 interface AiRecognitionTaskRow {
   active_photo_id: string;
   active_photo_name: string;
@@ -537,7 +562,7 @@ interface TvDeviceRow {
   updated_at: string;
 }
 
-const currentSchemaVersion = 15;
+const currentSchemaVersion = 16;
 
 const defaultBusinessVisionPrompt = [
   '按家庭记忆价值、人物情绪、清晰度、构图光影和电视大屏可观看性综合评分。账单、截图、模糊测试图、纯黑纯白图直接低分或标记废片；人物自然、家庭事件、开心瞬间、特殊场景应提高 memory_score。',
@@ -1384,6 +1409,52 @@ export class SqlitePhotoRepository {
       );
 
     return this.getAiSettings();
+  }
+
+  getFeiniuSettings(): FeiniuSettings {
+    this.initialize();
+    return rowToFeiniuSettings(this.getFeiniuSettingsRow());
+  }
+
+  getFeiniuRuntimeSettings(): FeiniuRuntimeSettings {
+    this.initialize();
+    const row = this.getFeiniuSettingsRow();
+    return {
+      ...rowToFeiniuSettings(row),
+      password: row.password,
+    };
+  }
+
+  updateFeiniuSettings(input: UpdateFeiniuSettingsInput): FeiniuSettings {
+    this.initialize();
+    const current = this.getFeiniuSettingsRow();
+    const now = new Date().toISOString();
+    const password = typeof input.password === 'string' && input.password.trim()
+      ? input.password.trim()
+      : input.keepPassword === true
+        ? current.password
+        : '';
+
+    this.getDatabase()
+      .prepare(
+        `
+          UPDATE feiniu_settings
+          SET
+            base_url = ?,
+            username = ?,
+            password = ?,
+            updated_at = ?
+          WHERE id = 1
+        `,
+      )
+      .run(
+        normalizeOptionalText(input.baseUrl, current.base_url, true),
+        normalizeOptionalText(input.username, current.username, true),
+        password,
+        now,
+      );
+
+    return this.getFeiniuSettings();
   }
 
   async ensurePhotoDerivatives(
@@ -2870,6 +2941,46 @@ export class SqlitePhotoRepository {
     };
   }
 
+  private getFeiniuSettingsRow(): FeiniuSettingsRow {
+    const database = this.getDatabase();
+    const existing = database
+      .prepare(
+        `
+          SELECT
+            base_url,
+            username,
+            password,
+            updated_at
+          FROM feiniu_settings
+          WHERE id = 1
+        `,
+      )
+      .get() as unknown as FeiniuSettingsRow | undefined;
+    if (existing) return existing;
+
+    const now = new Date().toISOString();
+    database
+      .prepare(
+        `
+          INSERT INTO feiniu_settings (
+            id,
+            base_url,
+            username,
+            password,
+            updated_at
+          )
+          VALUES (1, '', '', '', ?)
+        `,
+      )
+      .run(now);
+    return {
+      base_url: '',
+      password: '',
+      updated_at: now,
+      username: '',
+    };
+  }
+
   private getDatabase(): DatabaseSync {
     this.database ??= new DatabaseSync(this.databasePath);
     this.database.function('photo_url', (_photoId: unknown, _variant: unknown) =>
@@ -3260,6 +3371,34 @@ export class SqlitePhotoRepository {
         database
           .prepare('INSERT INTO schema_migrations (version, name) VALUES (?, ?)')
           .run(15, 'default_ai_output_contract_prompt');
+      }
+      if (row.version < 16) {
+        database.exec(`
+          CREATE TABLE IF NOT EXISTS feiniu_settings (
+            id INTEGER PRIMARY KEY CHECK (id = 1),
+            base_url TEXT NOT NULL DEFAULT '',
+            username TEXT NOT NULL DEFAULT '',
+            password TEXT NOT NULL DEFAULT '',
+            updated_at TEXT NOT NULL
+          );
+        `);
+        database
+          .prepare(
+            `
+              INSERT OR IGNORE INTO feiniu_settings (
+                id,
+                base_url,
+                username,
+                password,
+                updated_at
+              )
+              VALUES (1, '', '', '', ?)
+            `,
+          )
+          .run(new Date().toISOString());
+        database
+          .prepare('INSERT INTO schema_migrations (version, name) VALUES (?, ?)')
+          .run(16, 'feiniu_settings');
       }
       database.exec('COMMIT');
     } catch (error) {
@@ -3880,6 +4019,15 @@ function rowToAiSettings(row: AiSettingsRow): AiSettings {
     provider: normalizeAiProvider(row.provider, defaultAiSettings.provider),
     scoringPrompt: row.scoring_prompt || defaultAiSettings.scoringPrompt,
     updatedAt: row.updated_at,
+  };
+}
+
+function rowToFeiniuSettings(row: FeiniuSettingsRow): FeiniuSettings {
+  return {
+    baseUrl: row.base_url,
+    passwordConfigured: row.password.trim().length > 0,
+    updatedAt: row.updated_at,
+    username: row.username,
   };
 }
 

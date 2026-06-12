@@ -22,6 +22,7 @@ import type {
   TrashPhotoResult,
   TvDevice,
   UpdateAiSettingsInput,
+  UpdateFeiniuSettingsInput,
   UpdatePhotoAiCommentInput,
   UpdatePhotoAiInsightInput,
   UpdatePhotoMetadataInput,
@@ -49,6 +50,7 @@ import {
 import type {
   FeiniuConnectivityInput,
   FeiniuConnectivityResult,
+  FeiniuRuntimeConfig,
 } from './photo-sources/feiniu/feiniu-config';
 import type {
   AlbumDetailResponse,
@@ -144,7 +146,7 @@ export interface PlaybackAlbumAiPolicyUpdateResult {
 
 export interface PhotoSourceConfigResponse {
   activeSourceId: string;
-  feiniu: ReturnType<typeof getFeiniuRuntimeConfig>;
+  feiniu: FeiniuRuntimeConfig;
   local: {
     albumCount: number;
     enabled: boolean;
@@ -301,7 +303,9 @@ export class AppService implements OnModuleDestroy {
   private readonly aiTaskByPhotoId = new Map<string, string>();
   private activeVisionAiRequestCount = 0;
   private playbackAlbumJobQueue: Promise<void> = Promise.resolve();
-  private readonly photoSources: PhotoSourceRegistry = createDefaultPhotoSourceRegistry();
+  private photoSourceConfigKey = '';
+  private photoSourceRefreshDisabled = false;
+  private photoSources: PhotoSourceRegistry = createDefaultPhotoSourceRegistry();
   private readonly visionAiWaitQueue: Array<() => void> = [];
   private visionAi: UnifiedVisionAiAdapter = new OpenAiCompatibleUnifiedVisionAiAdapter();
 
@@ -328,10 +332,14 @@ export class AppService implements OnModuleDestroy {
   }
 
   replacePhotoRepositoryForTesting(photoRepository: SqlitePhotoRepository): void {
+    this.photoSourceConfigKey = '';
+    this.photoSourceRefreshDisabled = false;
     this.photoSources.replaceActiveSource(new SqlitePhotoSource(photoRepository));
   }
 
   replacePhotoSourceForTesting(photoSource: PhotoSource): void {
+    this.photoSourceConfigKey = '';
+    this.photoSourceRefreshDisabled = true;
     this.photoSources.replaceActiveSource(photoSource);
   }
 
@@ -579,7 +587,7 @@ export class AppService implements OnModuleDestroy {
         total: playbackAlbums.length,
       };
     }
-    const albums = this.photoSources.getActiveSource().listAlbums();
+    const albums = this.getPhotoSources().getActiveSource().listAlbums();
     if (isPromiseLike(albums)) {
       return albums.then((resolvedAlbums) => ({
         albums: [...playbackAlbums, ...resolvedAlbums],
@@ -614,7 +622,7 @@ export class AppService implements OnModuleDestroy {
     );
     if (playbackAlbum) return playbackAlbum;
 
-    return this.photoSources.getActiveSource().getAlbum(albumId);
+    return this.getPhotoSources().getActiveSource().getAlbum(albumId);
   }
 
   getPlaylist(
@@ -642,7 +650,7 @@ export class AppService implements OnModuleDestroy {
       return buildPlaylistResponse(playbackItems, limit, albumId);
     }
 
-    const sourceItems = this.photoSources.getActiveSource().listPlaylistItems(albumId);
+    const sourceItems = this.getPhotoSources().getActiveSource().listPlaylistItems(albumId);
     if (isPromiseLike(sourceItems)) {
       return sourceItems.then((items) => buildPlaylistResponse(items, limit, albumId));
     }
@@ -788,7 +796,7 @@ export class AppService implements OnModuleDestroy {
     photoId: string,
     variant?: PhotoAssetVariant,
   ): MaybePromise<PhotoSourceAsset | null> {
-    return this.photoSources.getActiveSource().getPhotoAsset?.(photoId, variant) ?? null;
+    return this.getPhotoSources().getActiveSource().getPhotoAsset?.(photoId, variant) ?? null;
   }
 
   getDerivativeAsset(photoId: string, filename: string): PhotoSourceAsset | null {
@@ -879,7 +887,7 @@ export class AppService implements OnModuleDestroy {
   }
 
   listFeiniuAlbumsForCuration(): MaybePromise<AlbumSummary[]> {
-    const albums = this.photoSources.getActiveSource().listAlbums();
+    const albums = this.getPhotoSources().getActiveSource().listAlbums();
     const filterFeiniuAlbums = (items: AlbumSummary[]) =>
       items.filter((album) => inferPhotoCenterSourceTypeFromAlbumId(album.albumId) === 'feiniu');
     return isPromiseLike(albums) ? albums.then(filterFeiniuAlbums) : filterFeiniuAlbums(albums);
@@ -915,7 +923,7 @@ export class AppService implements OnModuleDestroy {
     const feiniuAlbumsById = new Map(
       feiniuAlbums.map((album) => [album.albumId, album]),
     );
-    const source = this.getPhotoSourceById('feiniu') ?? this.photoSources.getActiveSource();
+    const source = this.getPhotoSourceById('feiniu') ?? this.getPhotoSources().getActiveSource();
     const photoIds: string[] = [];
 
     for (const sourceAlbumId of uniqueSourceAlbumIds) {
@@ -980,7 +988,7 @@ export class AppService implements OnModuleDestroy {
     const persistedSourceItemsByPhotoId = new Map(
       persistedSourceItems.map((item) => [item.photoId, item]),
     );
-    const sourceItems = (this.getPhotoSourceById('feiniu') ?? this.photoSources.getActiveSource())
+    const sourceItems = (this.getPhotoSourceById('feiniu') ?? this.getPhotoSources().getActiveSource())
       .listPlaylistItems(playbackAlbum.sourceAlbumId);
     const mergeItems = (items: PlaylistItem[]) => {
       const liveItems = items.map((item) => {
@@ -1784,10 +1792,11 @@ export class AppService implements OnModuleDestroy {
   }
 
   getPhotoSourceConfig(): PhotoSourceConfigResponse {
+    const photoSources = this.getPhotoSources();
     const overview = this.getSqliteSource().repository.getOverview();
     return {
-      activeSourceId: this.photoSources.getActiveSource().id,
-      feiniu: getFeiniuRuntimeConfig(),
+      activeSourceId: photoSources.getActiveSource().id,
+      feiniu: getFeiniuRuntimeConfig(this.getEffectivePhotoSourceEnv()),
       local: {
         albumCount: overview.albumCount,
         enabled: true,
@@ -1796,10 +1805,18 @@ export class AppService implements OnModuleDestroy {
     };
   }
 
+  updateFeiniuSettings(input: UpdateFeiniuSettingsInput = {}) {
+    const settings = this.getSqliteSource().repository.updateFeiniuSettings(input);
+    this.photoSourceConfigKey = '';
+    this.photoSourceRefreshDisabled = false;
+    this.refreshPhotoSourcesFromSettings();
+    return settings;
+  }
+
   testFeiniuConnectivity(
     input: FeiniuConnectivityInput = {},
   ): Promise<FeiniuConnectivityResult> {
-    return testFeiniuConnectivity(input);
+    return testFeiniuConnectivity(input, this.getEffectivePhotoSourceEnv());
   }
 
   getSamplePhotoSvg(
@@ -1852,7 +1869,7 @@ export class AppService implements OnModuleDestroy {
       return undefined;
     }
 
-    const source = this.getPhotoSourceById('feiniu') ?? this.photoSources.getActiveSource();
+    const source = this.getPhotoSourceById('feiniu') ?? this.getPhotoSources().getActiveSource();
     const sourceItems = source.listPlaylistItems(playbackAlbum.sourceAlbumId);
     const syncItems = async (items: PlaylistItem[]) => {
       if (items.length === 0) {
@@ -1925,7 +1942,7 @@ export class AppService implements OnModuleDestroy {
     }
 
     const asset = await Promise.resolve(
-      this.photoSources.getActiveSource().getPhotoAsset?.(item.photoId, 'display') ??
+      this.getPhotoSources().getActiveSource().getPhotoAsset?.(item.photoId, 'display') ??
       null,
     );
     if (!asset) return initialDerivative;
@@ -1966,10 +1983,45 @@ export class AppService implements OnModuleDestroy {
     timer.unref?.();
   }
 
+  private getPhotoSources(): PhotoSourceRegistry {
+    if (this.photoSourceRefreshDisabled) return this.photoSources;
+    this.refreshPhotoSourcesFromSettings();
+    return this.photoSources;
+  }
+
+  private refreshPhotoSourcesFromSettings(): void {
+    const sqliteSource = this.getSqliteSource();
+    const env = this.getEffectivePhotoSourceEnv();
+    const key = [
+      env.WRJDYK_PHOTO_SOURCE ?? '',
+      env.WRJDYK_FEINIU_BASE_URL ?? '',
+      env.WRJDYK_FEINIU_USERNAME ?? '',
+      env.WRJDYK_FEINIU_PASSWORD ? 'password' : '',
+    ].join('\n');
+    if (key === this.photoSourceConfigKey) return;
+
+    this.photoSources = createDefaultPhotoSourceRegistry(env, sqliteSource);
+    this.photoSourceConfigKey = key;
+  }
+
+  private getEffectivePhotoSourceEnv(): Record<string, string | undefined> {
+    const saved = this.getSqliteSource().repository.getFeiniuRuntimeSettings();
+    return {
+      ...process.env,
+      WRJDYK_FEINIU_BASE_URL:
+        saved.baseUrl.trim() || process.env.WRJDYK_FEINIU_BASE_URL,
+      WRJDYK_FEINIU_PASSWORD:
+        saved.password.trim() || process.env.WRJDYK_FEINIU_PASSWORD,
+      WRJDYK_FEINIU_USERNAME:
+        saved.username.trim() || process.env.WRJDYK_FEINIU_USERNAME,
+    };
+  }
+
   private getPhotoSourceById(id: string): PhotoSource | undefined {
-    const source = this.photoSources.getSourceById(id);
+    const photoSources = this.getPhotoSources();
+    const source = photoSources.getSourceById(id);
     if (source) return source;
-    const activeSource = this.photoSources.getActiveSource();
+    const activeSource = photoSources.getActiveSource();
     if (activeSource instanceof CompositePhotoSource) {
       return activeSource.getSourceById(id);
     }

@@ -46,16 +46,16 @@ TV 端规则：
 - 通过 `FileProvider` 授权给系统安装器安装。
 - 播放设置菜单中的“检查更新”可手动触发。
 
-## Version 1.0
+## Version 1.0.1
 
-- `versionCode`: `5`
-- `versionName`: `1.0`
+- `versionCode`: `6`
+- `versionName`: `1.0.1`
 - Update manifest:
   `http://<Feiniu-IP>:3999/api/device/app-update/latest`
 - Primary APK:
-  `http://<Feiniu-IP>:3999/releases/wangri-tv-1.0.apk`
+  `http://<Feiniu-IP>:3999/releases/wangri-tv-1.0.1.apk`
 - Backup release:
-  `https://github.com/zsdd2/jdyk/releases/tag/tv-v1.0`
+  `https://github.com/zsdd2/jdyk/releases/tag/tv-v1.0.1`
 
 The production APK must be built by the Android TV release workflow with the
 four `ANDROID_TV_*` signing secrets. Do not publish

@@ -34,8 +34,8 @@ export class PhotoSourceRegistry {
 
 export function createDefaultPhotoSourceRegistry(
   env: Record<string, string | undefined> = process.env,
+  sqliteSource = new SqlitePhotoSource(),
 ): PhotoSourceRegistry {
-  const sqliteSource = new SqlitePhotoSource();
   if (
     env.WRJDYK_PHOTO_SOURCE === 'feiniu' &&
     env.WRJDYK_FEINIU_BASE_URL &&

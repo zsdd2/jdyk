@@ -9,7 +9,7 @@
 - Android 更新检查：
   `http://<飞牛IP>:3999/api/device/app-update/latest`
 - Android APK：
-  `http://<飞牛IP>:3999/releases/wangri-tv-1.0.apk`
+  `http://<飞牛IP>:3999/releases/wangri-tv-1.0.1.apk`
 
 GHCR 镜像为公开镜像，飞牛拉取时不需要 GitHub Token。
 Compose 固定跟随 `latest`，以后升级不需要修改版本号。
@@ -35,12 +35,12 @@ mkdir -p data/backend data/media-cache data/releases
 - 填写飞牛相册用户名和密码；未填写时后台连接测试会提示缺少配置。
 - 从 GitHub Release `tv-v1.0` 的 `latest.json` 复制 APK 的 SHA256、大小和发布时间。
 
-下载 Android TV 1.0 APK：
+下载 Android TV 1.0.1 APK：
 
 ```sh
 curl -fL \
-  -o data/releases/wangri-tv-1.0.apk \
-  https://github.com/zsdd2/jdyk/releases/download/tv-v1.0/wangri-tv-1.0.apk
+  -o data/releases/wangri-tv-1.0.1.apk \
+  https://github.com/zsdd2/jdyk/releases/download/tv-v1.0.1/wangri-tv-1.0.1.apk
 ```
 
 拉取并启动：
@@ -58,7 +58,7 @@ curl -f http://127.0.0.1:3999/api/health
 curl -f http://127.0.0.1:5200/healthz
 curl -f http://127.0.0.1:5200/api/health
 curl -f http://127.0.0.1:3999/api/device/app-update/latest
-curl -I http://127.0.0.1:3999/releases/wangri-tv-1.0.apk
+curl -I http://127.0.0.1:3999/releases/wangri-tv-1.0.1.apk
 ```
 
 电视端后台地址填写：

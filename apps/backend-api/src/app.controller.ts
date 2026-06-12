@@ -37,6 +37,7 @@ import type { FeiniuConnectivityInput } from './photo-sources/feiniu/feiniu-conf
 import { isPromiseLike } from './photo-sources/photo-source';
 import type {
   CreatePlaybackAlbumInput,
+  UpdateFeiniuSettingsInput,
   UpdateAiSettingsInput,
   UpdatePhotoAiCommentInput,
   UpdatePhotoAiInsightInput,
@@ -112,7 +113,7 @@ export class AppController {
         ...manifest,
         apkUrl:
           manifest.apkUrl ||
-          `${protocol}://${hostname}:${backendPort}/releases/wangri-tv-1.0.apk`,
+          `${protocol}://${hostname}:${backendPort}/releases/wangri-tv-1.0.1.apk`,
       },
     };
   }
@@ -680,6 +681,16 @@ export class AppController {
     return {
       code: 0,
       data: this.appService.getPhotoSourceConfig(),
+    };
+  }
+
+  @Put('admin/photo-library/feiniu/settings')
+  updateAdminFeiniuSettings(
+    @Body() input: UpdateFeiniuSettingsInput = {},
+  ) {
+    return {
+      code: 0,
+      data: this.appService.updateFeiniuSettings(input),
     };
   }
 

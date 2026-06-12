@@ -110,7 +110,7 @@ jobs:
           const lines = [
             `WRJDYK_TV_UPDATE_VERSION_CODE=${manifest.versionCode}`,
             `WRJDYK_TV_UPDATE_VERSION_NAME=${manifest.versionName}`,
-            'WRJDYK_TV_UPDATE_APK_URL=http://${FEINIU_HOST}:3999/releases/wangri-tv-1.0.apk',
+            `WRJDYK_TV_UPDATE_APK_URL=http://\${FEINIU_HOST}:3999/releases/wangri-tv-${manifest.versionName}.apk`,
             `WRJDYK_TV_UPDATE_SHA256=${manifest.sha256}`,
             `WRJDYK_TV_UPDATE_SIZE_BYTES=${manifest.sizeBytes}`,
             `WRJDYK_TV_UPDATE_FORCE=${manifest.forceUpdate}`,

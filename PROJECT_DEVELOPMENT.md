@@ -1072,3 +1072,66 @@ GHCR 第七次发布跟进：
 后续计划：
 - 提交并推送 `main`，等待 GHCR 发布 `1.0.3` 和 `latest`。
 - 发布完成后给出固定 `1.0.3` Compose，便于飞牛直接拉取。
+## 28. 2026-06-12 飞牛配置保存与 Android TV 登录焦点修复交接
+
+当前修改目标：
+- 修复照片源飞牛页面只有连通性测试、没有保存飞牛地址/账号/密码入口的问题。
+- 修复 Android TV 登录页账号和密码输入框在软键盘返回后，遥控器左右键无法在文本框内移动光标、无法方便删除和修改已有字符的问题。
+- 修复 Android TV 登录页焦点移动异常，尤其是登录地址、账号、密码、登录按钮和已保存入口之间的焦点路径。
+- 完成后提升 Android TV 版本号，重新打包，并更新远程升级版本配置，推送 GitHub。
+
+本轮已完成的定位：
+- CodeGraph 已先行用于定位相关入口，但对本任务返回结果不够准确，随后用 `rg` 和局部文件读取确认真实入口。
+- 飞牛配置问题根因已确认：后端当前只有 `GET /api/admin/photo-library/source-config` 和 `POST /api/admin/photo-library/feiniu/connectivity`，没有保存配置的 API，也没有 SQLite 持久化表；前端 `apps/web-antd/src/views/photo-library/sources/index.vue` 只调用连通性测试。
+- Android TV 登录问题入口已确认：`apps/android-tv/app/src/main/java/com/wangrizhongxian/tv/MainActivity.kt` 中的 `TvBackendLoginScreen`、`GlassLoginField`、`ProtocolChip` 和通用 `TvInputField`。
+- 登录焦点问题的主要疑点已确认：`ProtocolChip` 和登录地址输入框共用同一个 `serverFocus`；账号输入框 `upFocusRequester = usernameFocus` 指向自己；`GlassLoginField` 使用 `String` 版 `BasicTextField`，没有保存 `TextFieldValue.selection`；`TvInputField` 当前会消费左右方向键，可能阻断文本框内部光标移动。
+
+本轮已实际改动：
+- `apps/backend-api/src/sqlite-photo.repository.ts` 已开始新增飞牛配置持久化类型：
+  - `FeiniuSettings`
+  - `FeiniuRuntimeSettings`
+  - `UpdateFeiniuSettingsInput`
+  - `FeiniuSettingsRow`
+- 这只是第一步类型声明，数据库 migration、repository 方法、Service、Controller、前端 API 和 UI 都还没有完成。
+
+下一步实施计划：
+1. 后端 SQLite：将 `currentSchemaVersion` 从 15 提升到 16；新增 `feiniu_settings` 单行表；增加 `getFeiniuSettings`、`getFeiniuRuntimeSettings`、`updateFeiniuSettings`；保存时支持密码留空且 `keepPassword=true` 时保留旧密码。
+2. 后端 AppService / Controller：新增 `PUT /api/admin/photo-library/feiniu/settings`；配置读取使用 SQLite 保存值优先、环境变量兜底；保存后刷新 PhotoSourceRegistry。
+3. 管理端：新增 `updateFeiniuSettingsApi`；在照片源页面增加“保存配置”按钮和保存 loading；Compose 默认飞牛地址继续留空，不硬编码 `host.docker.internal:60000`。
+4. Android TV：拆分协议 Chip 和服务器地址输入框的 `FocusRequester`；修正账号输入框向上焦点；将 `GlassLoginField` 改为内部维护 `TextFieldValue` 以保留 selection；检查 `TvInputField` 左右键处理，避免可编辑文本框吞掉左右方向键。
+5. 测试与构建：补后端 repository/controller 测试；跑后端定向 Jest、后端 build、管理端 typecheck、Android 单测/构建，至少完成 release APK 构建。
+6. 版本与发布：Android TV 建议提升到 `versionCode 6 / versionName 1.0.1`；更新 Compose/示例环境里的远程升级默认版本；构建 APK 后生成 SHA256 和 sizeBytes；验证 `/api/device/app-update/latest` 返回新版本元数据；提交、推送 GitHub，必要时推送 `tv-v1.0.1` 标签触发 Android TV Release。
+
+当前风险：
+- 当前工作树处于未完成状态，`sqlite-photo.repository.ts` 已有部分类型改动但未编译验证。
+- 不要直接发布当前状态；需要先完成上述实现和验证。
+
+## 29. 2026-06-12 飞牛配置保存与 Android TV 1.0.1 登录修复完成
+
+当前修改目标：
+- 完成飞牛照片源配置保存能力，管理端可保存飞牛地址、账号和密码，Compose 默认仍保持飞牛地址留空。
+- 修复 Android TV 登录页输入框光标编辑和焦点移动问题。
+- 将电视端版本更新为 `versionCode 6 / versionName 1.0.1`，并同步远程升级默认元数据。
+
+当前状态：
+- SQLite schema 升级到 16，新增 `feiniu_settings` 单行配置表。
+- 后端新增 `PUT /api/admin/photo-library/feiniu/settings`，保存后刷新 PhotoSourceRegistry。
+- 飞牛运行配置读取顺序为：SQLite 保存值优先，环境变量兜底。
+- 管理端照片源页面新增“保存配置”按钮，密码留空且勾选保留时继续使用已保存/已配置密码。
+- Android TV 登录页拆分协议 Chip 和服务地址输入框焦点；账号输入框向上焦点修正为服务地址输入框。
+- `GlassLoginField` 和 `TvInputField` 改为维护 `TextFieldValue.selection`，支持遥控器左右键在已有文本内移动光标并删除修改字符。
+- Compose 和 `.env.feiniu.example` 的远程更新默认版本已同步为 Android TV `1.0.1`。
+
+验证记录：
+- `corepack pnpm -F @wrjdyk/backend-api run test -- sqlite-photo.repository.spec.ts app.controller.spec.ts --runInBand`：84 个测试通过。
+- `corepack pnpm -F @wrjdyk/backend-api run build`：通过。
+- `corepack pnpm -F @vben/web-antd run typecheck`：通过。
+- `apps/web-antd/node_modules/.bin/vite.CMD build --mode production`：通过。
+- `node --test scripts/android-tv/generate-update-manifest.test.mjs`：3 个测试通过。
+- `docker compose -f docker-compose.feiniu.yml config`：通过，展开后 TV 更新版本为 `6 / 1.0.1`，飞牛地址为空。
+- Android 本地 Gradle 构建未完成：本机只有 JDK 11，当前 Android Gradle 插件要求 Java 17；需要由 GitHub Actions 的 Java 17 环境继续验证 release APK。
+
+下一步计划：
+- 提交并推送 `main`，触发 GHCR `latest` 镜像发布。
+- 推送 `tv-v1.0.1` 标签触发 Android TV Release workflow，生成 `wangri-tv-1.0.1.apk`、SHA256、sizeBytes 和 `latest.json`。
+- GitHub Actions 完成后，用 release 产物更新飞牛 `/workspace/releases` 中的 APK 和 Compose 环境变量，再由用户在电视端实际验证远程升级安装。

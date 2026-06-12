@@ -25,9 +25,11 @@ import {
   createFeiniuPhotoSyncJobApi,
   getPhotoSourceConfigApi,
   testFeiniuConnectivityApi,
+  updateFeiniuSettingsApi,
 } from '#/api/photo-library';
 
 const loading = ref(false);
+const saveLoading = ref(false);
 const syncLoading = ref(false);
 const testLoading = ref(false);
 const sourceConfig = ref<PhotoSourceConfig>();
@@ -58,12 +60,29 @@ async function loadConfig() {
   loading.value = true;
   try {
     sourceConfig.value = await getPhotoSourceConfigApi();
-    feiniuForm.value.baseUrl = '';
-    feiniuForm.value.username = '';
+    feiniuForm.value.baseUrl = sourceConfig.value.feiniu.baseUrl ?? '';
+    feiniuForm.value.username = sourceConfig.value.feiniu.username ?? '';
     feiniuForm.value.password = '';
-    feiniuForm.value.useConfiguredPassword = false;
+    feiniuForm.value.useConfiguredPassword =
+      sourceConfig.value.feiniu.passwordConfigured;
   } finally {
     loading.value = false;
+  }
+}
+
+async function saveFeiniuSettings() {
+  saveLoading.value = true;
+  try {
+    await updateFeiniuSettingsApi({
+      baseUrl: feiniuForm.value.baseUrl,
+      keepPassword: feiniuForm.value.useConfiguredPassword,
+      password: feiniuForm.value.password,
+      username: feiniuForm.value.username,
+    });
+    message.success('飞牛配置已保存');
+    await loadConfig();
+  } finally {
+    saveLoading.value = false;
   }
 }
 
@@ -158,6 +177,13 @@ onMounted(loadConfig);
           <Checkbox v-model:checked="feiniuForm.useConfiguredPassword">
             密码留空时使用后端环境变量中的飞牛密码
           </Checkbox>
+          <Button
+            :loading="saveLoading"
+            type="primary"
+            @click="saveFeiniuSettings"
+          >
+            保存配置
+          </Button>
           <Button :loading="testLoading" type="primary" @click="testFeiniu">
             检测连接
           </Button>

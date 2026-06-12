@@ -333,6 +333,13 @@ export interface FeiniuConnectivityInput {
   username?: string;
 }
 
+export interface UpdateFeiniuSettingsInput {
+  baseUrl?: string;
+  keepPassword?: boolean;
+  password?: string;
+  username?: string;
+}
+
 export interface FeiniuConnectivityResult {
   albumCount?: number;
   baseUrl?: string;
@@ -563,6 +570,13 @@ export function updateAiSettingsApi(input: UpdateAiSettingsInput) {
 
 export function getPhotoSourceConfigApi() {
   return requestClient.get<PhotoSourceConfig>('/admin/photo-library/source-config');
+}
+
+export function updateFeiniuSettingsApi(input: UpdateFeiniuSettingsInput) {
+  return requestClient.put<PhotoSourceConfig['feiniu']>(
+    '/admin/photo-library/feiniu/settings',
+    input,
+  );
 }
 
 export function testFeiniuConnectivityApi(input: FeiniuConnectivityInput) {

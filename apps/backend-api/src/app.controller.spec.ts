@@ -157,7 +157,7 @@ describe('AppController', () => {
                 : undefined,
             protocol: 'http',
           } as never).data.apkUrl,
-        ).toBe('http://192.168.50.20:3999/releases/wangri-tv-1.0.apk');
+        ).toBe('http://192.168.50.20:3999/releases/wangri-tv-1.0.1.apk');
       } finally {
         restoreEnv('WRJDYK_TV_UPDATE_APK_URL', previousApkUrl);
       }
@@ -167,20 +167,20 @@ describe('AppController', () => {
       const previousReleaseDir = process.env.WRJDYK_RELEASES_DIR;
       const releaseDir = join(testDataDir, 'releases');
       mkdirSync(releaseDir, { recursive: true });
-      writeFileSync(join(releaseDir, 'wangri-tv-1.0.apk'), 'apk-content');
+      writeFileSync(join(releaseDir, 'wangri-tv-1.0.1.apk'), 'apk-content');
       process.env.WRJDYK_RELEASES_DIR = releaseDir;
       const response = { set: jest.fn() };
 
       try {
         const file = appController.getReleaseApk(
-          'wangri-tv-1.0.apk',
+          'wangri-tv-1.0.1.apk',
           response as never,
         );
 
         expect(file).toBeDefined();
         expect(response.set).toHaveBeenCalledWith({
           'Cache-Control': 'public, max-age=300',
-          'Content-Disposition': 'attachment; filename="wangri-tv-1.0.apk"',
+          'Content-Disposition': 'attachment; filename="wangri-tv-1.0.1.apk"',
           'Content-Type': 'application/vnd.android.package-archive',
         });
         const chunks: Buffer[] = [];
@@ -293,7 +293,7 @@ describe('AppController', () => {
         data: expect.objectContaining({
           albumCount: 3,
           databasePath: expect.stringContaining('.sqlite'),
-          migrationVersion: 15,
+          migrationVersion: 16,
           photoCount: 9,
           photoRoot: expect.stringContaining('ceshi'),
         }),
@@ -341,6 +341,28 @@ describe('AppController', () => {
             photoCount: 9,
           }),
         }),
+      });
+    });
+
+    it('saves Feiniu settings for the admin console', () => {
+      const saved = appController.updateAdminFeiniuSettings({
+        baseUrl: ' http://nas.local:60000 ',
+        password: ' secret ',
+        username: ' fn-user ',
+      });
+
+      expect(saved).toEqual({
+        code: 0,
+        data: expect.objectContaining({
+          baseUrl: 'http://nas.local:60000',
+          passwordConfigured: true,
+          username: 'fn-user',
+        }),
+      });
+      expect(appController.getAdminPhotoSourceConfig().data.feiniu).toMatchObject({
+        baseUrl: 'http://nas.local:60000',
+        passwordConfigured: true,
+        username: 'fn-user',
       });
     });
 
