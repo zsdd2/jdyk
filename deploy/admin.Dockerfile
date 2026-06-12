@@ -1,4 +1,4 @@
-FROM node:22-bookworm-slim AS builder
+FROM --platform=$BUILDPLATFORM node:22-bookworm-slim AS builder
 
 ENV CI=true
 ENV PNPM_HOME=/pnpm

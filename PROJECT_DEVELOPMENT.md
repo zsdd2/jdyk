@@ -833,3 +833,20 @@ GHCR 首次发布跟进：
 - 推送修复并观察新一轮 GHCR 多架构构建。
 - 构建成功后使用匿名 GHCR Registry API 验证 `1.0` 标签及
   `linux/amd64`、`linux/arm64` 清单。
+
+GHCR 第二次发布跟进：
+- 后端 `Build and push image` 已成功；失败仅来自后续 `gh api` 修改包可见性，仓库
+  `GITHUB_TOKEN` 不具备容器包管理权限。
+- 已通过匿名 GHCR Registry API 获取
+  `ghcr.io/zsdd2/jdyk-backend:1.0`，状态为 200，并确认清单包含
+  `linux/amd64` 与 `linux/arm64`；说明公开仓库关联的后端包已可匿名拉取，无需额外修改
+  可见性。
+- 管理端依赖安装已成功，实际失败点是 ARM64 QEMU 环境内执行 Vite 生产构建。
+- 管理端 Dockerfile 的静态资源构建阶段已固定使用 `$BUILDPLATFORM`；前端只在 GitHub
+  原生 runner 架构编译，最终 Nginx 运行层仍分别生成 amd64/arm64 镜像。
+- 已移除会产生假失败的 `Make package public` 步骤；最终公开状态继续由匿名 Registry
+  API 验证。
+
+下一步：
+- 推送第三轮修复并等待两个镜像任务成功。
+- 匿名验证管理端和后端 `1.0` 标签的双架构清单。
