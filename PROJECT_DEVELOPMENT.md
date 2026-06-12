@@ -880,3 +880,9 @@ GHCR 第五次发布跟进：
   Node `24.13.0`。
 - 管理端生产构建包含约 7884 个模块，已为 Vite 设置
   `NODE_OPTIONS=--max-old-space-size=6144`，避免 runner 默认堆上限导致构建退出。
+
+GHCR 第六次发布跟进：
+- Node 24 与 6 GB 堆上限下，管理端仍失败于 `Build admin assets`，排除运行时版本和默认
+  V8 堆上限是主要根因。
+- 工作流已在该步骤保留 Vite 完整输出，并在失败时将最后 6000 个字符写入 GitHub Error
+  Annotation；这样无需管理员日志权限即可通过公开 Check API 获取真实错误文本。

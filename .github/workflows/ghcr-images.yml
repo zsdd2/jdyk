@@ -52,7 +52,16 @@ jobs:
         working-directory: apps/web-antd
         env:
           NODE_OPTIONS: --max-old-space-size=6144
-        run: ../../node_modules/.bin/vite build --mode production
+        run: |
+          set +e
+          ../../node_modules/.bin/vite build --mode production 2>&1 | tee /tmp/admin-build.log
+          status=${PIPESTATUS[0]}
+          set -e
+          if [ "$status" -ne 0 ]; then
+            message=$(node -e "const fs=require('fs');const s=fs.readFileSync('/tmp/admin-build.log','utf8').slice(-6000);process.stdout.write(s.replace(/%/g,'%25').replace(/\r/g,'%0D').replace(/\n/g,'%0A'))")
+            echo "::error title=Admin build failed::$message"
+            exit "$status"
+          fi
 
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
