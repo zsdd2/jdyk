@@ -40,7 +40,7 @@ jobs:
         if: matrix.name == 'admin'
         uses: actions/setup-node@v4
         with:
-          node-version: 22.18.0
+          node-version: 24.13.0
           cache: pnpm
 
       - name: Install admin dependencies
@@ -50,6 +50,8 @@ jobs:
       - name: Build admin assets
         if: matrix.name == 'admin'
         working-directory: apps/web-antd
+        env:
+          NODE_OPTIONS: --max-old-space-size=6144
         run: ../../node_modules/.bin/vite build --mode production
 
       - name: Set up QEMU
