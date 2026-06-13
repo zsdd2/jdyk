@@ -346,3 +346,9 @@ P2：
 - 当前验证：`.\scripts\release\verify-local-release.ps1` 完整通过；后端两个套件 `93/93`、管理端 4 个测试文件 `5/5`、后端 build、管理端 typecheck/production build、两份 Compose 展开、Android 全量 `testDebugUnitTest`、Debug/Release 构建及 APK 元数据检查均成功。Debug APK 为 `17,467,250` 字节，SHA256 `640C00CE747AF1D3DC7E8011FB23F62EBD2DB22108A2002DF90311F827594D6B`；本地 Release 为未签名包，只用于构建验证。发布预检会确认提示词目录、业务 Vision 文件、标准输出契约及 Docker 镜像复制规则；发布脚本从后端目录调用该包本地的 `jest.CMD --runInBand`，避免两个后端套件并行清理共享测试目录。内置浏览器拒绝访问本地预览地址，因此本轮无法重新做网页视觉验收，改用既有设计坐标、派生图尺寸关系、单元测试和 Android 构建验证。
 - 发布状态：正式功能提交 `c19b6e8` 已推送 `main`，`tv-v1.0.4` 标签已成功推送。GitHub API 在线状态查询因本机 TLS 请求持续无响应而终止，流水线结果尚未在线确认。
 - 未来修改计划：验证 GHCR `1.0.8/latest` 镜像和 GitHub Actions 正式签名 APK；随后在真实 Android 9 盒子验收安装授权流程，并在实体 TV 面板验收竖版两种模板的视觉效果。
+
+2026-06-14 Android TV 竖屏现有版式随机播放：
+- 当前修改目标：不调整任何现有展示版式，仅让竖屏照片随机使用正式代码中已有的全部竖屏版式。
+- 当前状态：确认当前已有两种竖屏版式，即画内覆盖 `Overlay` 和画外侧栏 `Side`；TV 端按 `photoId` 稳定散列选择，保证不同竖屏照片能覆盖两种方式，同一照片播放和重组期间不会切换版式；横屏逻辑不变。
+- 当前验证：定向 `MemoryExhibitionPlayerTest` 已完成预期失败到通过的红绿验证；Android 全量 `testDebugUnitTest` 与 `assembleDebug` 均成功。
+- 未来修改计划：创建本地提交，重启本地后端和管理端，将 Debug APK 安装到已连接设备并使用实际播放截图确认升级和竖屏随机效果。

@@ -551,6 +551,11 @@ internal enum class CaptionRole {
   Soft,
 }
 
+internal enum class PortraitLayoutVariant {
+  Overlay,
+  Side,
+}
+
 internal data class CinematicCaptionLineSpec(
   val fontSize: Int,
   val height: Int,
@@ -575,11 +580,15 @@ private val cinematicSupportingFontFamily = FontFamily(Font(R.font.lxgw_heart_se
 
 private fun cinematicCaptionDesignLines(item: TvPlaylistItem): List<CinematicCaptionLineSpec> {
   if (!item.isPortrait) return cinematicCaptionDesignLines()
-  return if (item.layoutTemplateId.equals("portrait_side", ignoreCase = true)) {
-    portraitSideCaptionDesignLines()
-  } else {
-    portraitOverlayCaptionDesignLines()
+  return when (portraitLayoutVariantFor(item.photoId)) {
+    PortraitLayoutVariant.Overlay -> portraitOverlayCaptionDesignLines()
+    PortraitLayoutVariant.Side -> portraitSideCaptionDesignLines()
   }
+}
+
+internal fun portraitLayoutVariantFor(photoId: String): PortraitLayoutVariant {
+  val variants = PortraitLayoutVariant.entries
+  return variants[photoId.hashCode().ushr(1) % variants.size]
 }
 
 internal fun cinematicCaptionDesignLines(): List<CinematicCaptionLineSpec> {

@@ -64,6 +64,19 @@ class MemoryExhibitionPlayerTest {
   }
 
   @Test
+  fun portraitPhotosUseEveryExistingLayoutWithoutChangingDuringPlayback() {
+    val variants = (1..100)
+      .map { portraitLayoutVariantFor("portrait-photo-$it") }
+      .toSet()
+
+    assertEquals(setOf(PortraitLayoutVariant.Overlay, PortraitLayoutVariant.Side), variants)
+    assertEquals(
+      portraitLayoutVariantFor("stable-photo"),
+      portraitLayoutVariantFor("stable-photo"),
+    )
+  }
+
+  @Test
   fun cinematicCaptionFittedFontSizeKeepsLongHandwrittenTitleOnOneLine() {
     val titleSpec = cinematicCaptionDesignLines()[1]
     val longTitle = "你在湖边举灯看向远方的微光与山海"
