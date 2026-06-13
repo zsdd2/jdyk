@@ -6,6 +6,7 @@
 
 - `apps/web-antd`：Vben Admin 管理后台底座。
 - `apps/backend-api`：NestJS 后端 API。
+- `apps/android-tv`：Kotlin + Compose 原生 Android TV 播放器。
 - `apps/tv-player-web`：电视端 Web 播放器。
 - `packages/shared`：前后端共享 TypeScript 类型。
 
@@ -20,8 +21,8 @@ corepack pnpm dev:tv
 
 默认端口：
 
-- 后端 API：`http://localhost:3100/api`
-- 管理后台：`http://localhost:5666`
+- 后端 API：`http://localhost:3999/api`
+- 管理后台：`http://localhost:5200`
 - 电视播放器：`http://localhost:5174`
 
 ## 当前闭环
@@ -39,5 +40,5 @@ corepack pnpm dev:tv
 
 ## 部署与发布
 
-- [飞牛 Docker Compose 部署](docs/FEINIU_DEPLOYMENT.md)
-- [管理端、后端与 Android TV 发布办法](docs/RELEASE_GUIDE.md)
+- [开发规范、API 与固定流程](DEVELOPMENT_STANDARDS_API.md)
+- [开发进度同步](PROJECT_DEVELOPMENT.md)

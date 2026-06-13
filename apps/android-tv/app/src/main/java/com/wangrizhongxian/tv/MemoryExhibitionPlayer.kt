@@ -675,9 +675,9 @@ internal fun cinematicSubtitleTextStyle(
     letterSpacing = letterSpacing,
     textAlign = TextAlign.Center,
     shadow = Shadow(
-      color = Color.Black.copy(alpha = 0.58f),
-      offset = Offset(0f, 3f),
-      blurRadius = 10f,
+      color = Color.Black.copy(alpha = 0.70f),
+      offset = Offset(0f, 4f),
+      blurRadius = 16f,
     ),
   )
 }

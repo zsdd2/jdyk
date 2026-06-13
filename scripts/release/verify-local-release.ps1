@@ -1,5 +1,5 @@
 param(
-  [string] $ImageVersion = '1.0.6',
+  [string] $ImageVersion = '1.0.7',
   [int] $TvVersionCode = 8,
   [string] $TvVersionName = '1.0.3',
   [string] $JavaHome = 'F:\Java\OpenJDK17U-jdk_x64_windows_hotspot_17.0.19_10\jdk-17.0.19+10',
@@ -44,6 +44,7 @@ Invoke-Step 'check version surfaces' {
   Assert-FileContains 'apps/android-tv/app/build.gradle' "versionName '$TvVersionName'" "TV versionName is not $TvVersionName"
   Assert-FileContains 'docker-compose.feiniu.yml' "WRJDYK_TV_UPDATE_VERSION_CODE:-$TvVersionCode" "Compose default TV versionCode is not $TvVersionCode"
   Assert-FileContains 'docker-compose.feiniu.yml' "WRJDYK_TV_UPDATE_VERSION_NAME:-$TvVersionName" "Compose default TV versionName is not $TvVersionName"
+  Assert-FileContains 'deploy/nginx.conf' 'client_max_body_size 350m' 'Admin nginx upload body limit must allow Android TV APK uploads'
 }
 
 Invoke-Step 'android update manifest tests' {

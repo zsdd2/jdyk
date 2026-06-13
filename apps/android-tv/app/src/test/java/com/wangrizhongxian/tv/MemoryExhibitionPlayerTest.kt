@@ -1,7 +1,10 @@
 package com.wangrizhongxian.tv
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
+import androidx.compose.ui.unit.sp
 
 class MemoryExhibitionPlayerTest {
   @Test
@@ -56,6 +59,21 @@ class MemoryExhibitionPlayerTest {
     val lines = item.cinematicCaptionLines(narrationVariant = null)
 
     assertEquals(listOf("first line", "second line", "third line"), lines)
+  }
+
+  @Test
+  fun cinematicSubtitleTextStyleKeepsReadableShadow() {
+    val style = cinematicSubtitleTextStyle(
+      role = CaptionRole.Normal,
+      fontSize = 88.sp,
+      letterSpacing = 42.sp,
+      lineHeight = 104.sp,
+    )
+
+    val shadow = style.shadow
+    assertNotNull(shadow)
+    assertTrue((shadow?.color?.alpha ?: 0f) >= 0.68f)
+    assertTrue((shadow?.blurRadius ?: 0f) >= 14f)
   }
 
   private fun playlistItem(
