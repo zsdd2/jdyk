@@ -278,6 +278,10 @@ P2：
 - 修复：在 `deploy/nginx.conf` 的 server 级别增加 `client_max_body_size 350m`，并将管理端/后端镜像固定版本提升到 `1.0.7`。
 - 防回归：`scripts/release/verify-local-release.ps1` 增加 nginx 上传限制检查。
 - 发布注意：该修复需要重新构建并发布管理端镜像，飞牛侧重新拉取 `jdyk-admin:latest` 并重建容器后才会生效。
+- 本地验证：`.\scripts\release\verify-local-release.ps1 -ImageVersion 1.0.7 -TvVersionCode 8 -TvVersionName 1.0.3` 通过。
+- GitHub 发布：提交 `042a47b` 已推送到 `main`，`Publish GHCR Images` run `27451911957` 中 `Publish admin` 已成功。
+- GHCR 验证：`ghcr.io/zsdd2/jdyk-admin:1.0.7` 和 `ghcr.io/zsdd2/jdyk-admin:latest` digest 一致，均包含 `linux/amd64` 与 `linux/arm64`。
+- 截至本记录更新时，`Publish backend` 仍在 `Build and push image` 阶段；这不影响 TV APK 上传 413 修复，因为问题位于 admin nginx 镜像。
 
 2026-06-13 发布验证：
 
