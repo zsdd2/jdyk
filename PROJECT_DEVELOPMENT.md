@@ -338,10 +338,11 @@ P2：
 - 当前修改目标：为 Android TV A 版摄影海报显示修复更新项目版本与电视端版本，并推送 GitHub。
 - 当前状态：Android TV 版本已提升到 `versionCode 9 / versionName 1.0.4`；管理端发布版本已提升到 `1.0.8`；飞牛/latest compose 默认 TV 更新元数据、发布验证脚本、manifest 测试、Android TV README 和发布规范文档已同步。
 - 验证结果：`.\scripts\release\verify-local-release.ps1` 通过；Android APK 元数据确认为 `versionCode=9`、`versionName=1.0.4`；模拟器播放截图确认字幕居中、长手写标题单行完整显示、底部暗底为全屏向上渐变。截图保存于 `build/android-tv-a-style-gradient-clean.png`。
-- 未来修改计划：生成正式发布提交并推送 `main`；随后创建并推送 `tv-v1.0.4` 标签，等待 GitHub Actions 产出正式签名 APK。
+- 发布状态：正式功能提交 `c19b6e8` 已推送 `main`；`tv-v1.0.4` 标签已创建并推送，等待 GitHub Actions 产出正式签名 APK。
 
 2026-06-13 竖版布局、旁白刷新与照片顶部信息完善：
 - 当前修改目标：竖版照片按照片画框缩小字幕并提供画内覆盖、画外侧栏两种模板；TV 每次收到新播放列表后立即使用最新三段旁白；顶部时间、地点、天气优先使用照片已保存信息，缺失时才采用 AI 有证据的推断；业务提示词与标准输出字段要求以本地文件维护并随后端镜像发布。
 - 当前状态：共享播放协议已增加照片宽高、方向和顶部信息；SQLite schema 版本提升到 18，在生成派生图时持久化原图方向，并在升级时将已有数据库刷新到本次随包发布的两份提示词；后端播放列表优先组合照片字段，缺失项再使用 `observed_meta`；Android TV 已移除按 `photoId` 缓存旁白的逻辑，竖版默认使用画内覆盖模板，`portrait_side` 使用画外侧栏模板；生产 Docker 镜像会复制提示词目录。
 - 当前验证：`.\scripts\release\verify-local-release.ps1` 完整通过；后端两个套件 `93/93`、管理端 4 个测试文件 `5/5`、后端 build、管理端 typecheck/production build、两份 Compose 展开、Android 全量 `testDebugUnitTest`、Debug/Release 构建及 APK 元数据检查均成功。Debug APK 为 `17,467,250` 字节，SHA256 `640C00CE747AF1D3DC7E8011FB23F62EBD2DB22108A2002DF90311F827594D6B`；本地 Release 为未签名包，只用于构建验证。发布预检会确认提示词目录、业务 Vision 文件、标准输出契约及 Docker 镜像复制规则；发布脚本从后端目录调用该包本地的 `jest.CMD --runInBand`，避免两个后端套件并行清理共享测试目录。内置浏览器拒绝访问本地预览地址，因此本轮无法重新做网页视觉验收，改用既有设计坐标、派生图尺寸关系、单元测试和 Android 构建验证。
-- 未来修改计划：检查最终 diff 并只纳入本任务相关文件；推送 `main` 和 `tv-v1.0.4` 标签；发布后验证 GHCR 镜像及 GitHub Actions 正式签名 APK。真实 Android 9 盒子的安装授权流程和实体 TV 面板竖版视觉效果仍需设备验收。
+- 发布状态：正式功能提交 `c19b6e8` 已推送 `main`，`tv-v1.0.4` 标签已成功推送。GitHub API 在线状态查询因本机 TLS 请求持续无响应而终止，流水线结果尚未在线确认。
+- 未来修改计划：验证 GHCR `1.0.8/latest` 镜像和 GitHub Actions 正式签名 APK；随后在真实 Android 9 盒子验收安装授权流程，并在实体 TV 面板验收竖版两种模板的视觉效果。
