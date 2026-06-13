@@ -1,6 +1,7 @@
 package com.wangrizhongxian.tv
 
 import android.app.Activity
+import android.content.ActivityNotFoundException
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
@@ -130,12 +131,26 @@ object AppUpdateManager {
       activity.packageManager.canRequestPackageInstalls()
   }
 
+  internal fun shouldBlockDownloadForInstallPermission(sdkInt: Int): Boolean = false
+
+  internal fun installIntentActionForSdk(sdkInt: Int): String {
+    return if (sdkInt >= Build.VERSION_CODES.N) {
+      Intent.ACTION_INSTALL_PACKAGE
+    } else {
+      Intent.ACTION_VIEW
+    }
+  }
+
   fun openInstallPermission(activity: Activity) {
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
       val intent = Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES).apply {
         data = Uri.parse("package:${activity.packageName}")
       }
-      activity.startActivity(intent)
+      try {
+        activity.startActivity(intent)
+      } catch (_: ActivityNotFoundException) {
+        activity.startActivity(Intent(Settings.ACTION_SECURITY_SETTINGS))
+      }
     }
   }
 
@@ -146,12 +161,27 @@ object AppUpdateManager {
     } else {
       Uri.fromFile(apkFile)
     }
-    val intent = Intent(Intent.ACTION_VIEW).apply {
+    val intent = Intent(installIntentActionForSdk(Build.VERSION.SDK_INT)).apply {
       addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
       addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-      setDataAndType(apkUri, "application/vnd.android.package-archive")
+      if (action == Intent.ACTION_INSTALL_PACKAGE) {
+        data = apkUri
+        putExtra(Intent.EXTRA_NOT_UNKNOWN_SOURCE, true)
+        putExtra(Intent.EXTRA_RETURN_RESULT, true)
+      } else {
+        setDataAndType(apkUri, "application/vnd.android.package-archive")
+      }
     }
-    activity.startActivity(intent)
+    try {
+      activity.startActivity(intent)
+    } catch (_: ActivityNotFoundException) {
+      val fallbackIntent = Intent(Intent.ACTION_VIEW).apply {
+        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        setDataAndType(apkUri, "application/vnd.android.package-archive")
+      }
+      activity.startActivity(fallbackIntent)
+    }
   }
 
   private fun updateApkFile(context: Context, versionName: String): File {

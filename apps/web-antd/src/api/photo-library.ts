@@ -327,11 +327,26 @@ export interface TvReleaseManifest {
   versionName: string;
 }
 
+export interface TvReleaseVersion {
+  apkUrl: string;
+  fileExists: boolean;
+  fileName: string;
+  forceUpdate: boolean;
+  isLatest: boolean;
+  publishedAt: string;
+  releaseNotes: string;
+  sha256: string;
+  sizeBytes: number;
+  versionCode: number;
+  versionName: string;
+}
+
 export interface TvReleaseInfo {
   fileExists: boolean;
   fileName: string;
   manifest: TvReleaseManifest;
   releasesDirectory: string;
+  versions: TvReleaseVersion[];
 }
 
 export interface UploadTvReleasePackageInput {

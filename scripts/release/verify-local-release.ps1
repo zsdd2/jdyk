@@ -1,7 +1,7 @@
 param(
-  [string] $ImageVersion = '1.0.7',
-  [int] $TvVersionCode = 8,
-  [string] $TvVersionName = '1.0.3',
+  [string] $ImageVersion = '1.0.8',
+  [int] $TvVersionCode = 9,
+  [string] $TvVersionName = '1.0.4',
   [string] $JavaHome = 'F:\Java\OpenJDK17U-jdk_x64_windows_hotspot_17.0.19_10\jdk-17.0.19+10',
   [string] $AndroidSdk = 'F:\Android\Sdk'
 )
@@ -45,6 +45,18 @@ Invoke-Step 'check version surfaces' {
   Assert-FileContains 'docker-compose.feiniu.yml' "WRJDYK_TV_UPDATE_VERSION_CODE:-$TvVersionCode" "Compose default TV versionCode is not $TvVersionCode"
   Assert-FileContains 'docker-compose.feiniu.yml' "WRJDYK_TV_UPDATE_VERSION_NAME:-$TvVersionName" "Compose default TV versionName is not $TvVersionName"
   Assert-FileContains 'deploy/nginx.conf' 'client_max_body_size 350m' 'Admin nginx upload body limit must allow Android TV APK uploads'
+  Assert-FileContains 'deploy/backend.Dockerfile' '/workspace/apps/backend-api/prompts ./apps/backend-api/prompts' 'Backend image must include editable AI prompt files'
+  $promptFiles = @(Get-ChildItem -LiteralPath 'apps/backend-api/prompts' -Filter '*.md' -File)
+  $businessPrompt = $promptFiles | Where-Object { $_.Name -like '*Vision*.md' } | Select-Object -First 1
+  $contractPrompt = $promptFiles | Where-Object {
+    Select-String -LiteralPath $_.FullName -Pattern 'photo_tv_payload_v1' -Quiet
+  } | Select-Object -First 1
+  if (-not $businessPrompt) {
+    throw 'Business vision prompt file is missing'
+  }
+  if (-not $contractPrompt) {
+    throw 'Output contract prompt file is missing'
+  }
 }
 
 Invoke-Step 'android update manifest tests' {
@@ -52,7 +64,12 @@ Invoke-Step 'android update manifest tests' {
 }
 
 Invoke-Step 'backend focused tests' {
-  corepack pnpm --filter '@wrjdyk/backend-api' test -- --runInBand app.controller.spec.ts sqlite-photo.repository.spec.ts
+  Push-Location apps/backend-api
+  try {
+    .\node_modules\.bin\jest.CMD --runInBand app.controller.spec.ts sqlite-photo.repository.spec.ts
+  } finally {
+    Pop-Location
+  }
 }
 
 Invoke-Step 'web focused tests' {

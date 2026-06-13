@@ -175,9 +175,9 @@ CodeGraph 审计时间：2026-06-13。
 
 ```powershell
 .\scripts\release\verify-local-release.ps1 `
-  -ImageVersion 1.0.7 `
-  -TvVersionCode 8 `
-  -TvVersionName 1.0.3
+  -ImageVersion 1.0.8 `
+  -TvVersionCode 9 `
+  -TvVersionName 1.0.4
 ```
 
 约束：
@@ -193,7 +193,7 @@ CodeGraph 审计时间：2026-06-13。
 ```powershell
 git status --short
 git add <本次修改文件>
-git commit -m "Release admin 1.0.7"
+git commit -m "Release admin 1.0.8"
 git push origin main
 ```
 
@@ -209,13 +209,13 @@ git push origin main
 ### 7.4 发布 Android TV
 
 ```powershell
-git tag tv-v1.0.3
-git push origin tv-v1.0.3
+git tag tv-v1.0.4
+git push origin tv-v1.0.4
 ```
 
 GitHub Release 必须包含：
 
-- `wangri-tv-1.0.3.apk`
+- `wangri-tv-1.0.4.apk`
 - `latest.json`
 - `feiniu-update.env`
 
@@ -259,7 +259,7 @@ curl -f http://127.0.0.1:3999/api/health
 curl -f http://127.0.0.1:5200/healthz
 curl -f http://127.0.0.1:5200/api/health
 curl -f http://127.0.0.1:3999/api/device/app-update/latest
-curl -I http://127.0.0.1:3999/releases/wangri-tv-1.0.3.apk
+curl -I http://127.0.0.1:3999/releases/wangri-tv-1.0.4.apk
 ```
 
 TV APK 的 `versionCode`、`versionName`、`sha256`、`sizeBytes` 必须与 `latest.json` 和后台接口一致。

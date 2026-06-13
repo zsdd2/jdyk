@@ -117,7 +117,7 @@
 - 后端提供 `GET /api/device/app-update/latest`。
 - 管理端提供 TV APK 上传页面。
 - Android TV 支持下载、大小校验、SHA256 校验和系统安装唤起。
-- 当前 Android TV 最新版本是 `versionName 1.0.3`、`versionCode 8`。
+- 当前 Android TV 最新版本是 `versionName 1.0.4`、`versionCode 9`。
 
 问题：
 
@@ -165,9 +165,9 @@
 - 后台首页进入照片中心，不再默认进入模板分析页。
 - 管理端已有照片列表、播放相册、AI 设置、AI 进度、设备中心、TV 版本管理。
 - TV 版本管理上传已修复，前端使用 `requestClient.upload()` 发送 multipart。
-- 管理端关于页版本已提升到 `1.0.7`，用于发布 TV APK 上传 413 修复。
+- 管理端关于页版本已提升到 `1.0.8`，用于发布 Android TV A 版摄影海报显示修复。
 - GHCR 后端/管理端 `1.0.6` 和 `latest` 已发布并验证多架构 manifest；`1.0.7/latest` 待本轮推送后由 Actions 发布验证。
-- Android TV `1.0.3 / versionCode 8` 已生成、上传本地后端并验证更新 manifest。
+- Android TV `1.0.4 / versionCode 9` 已实现 A 版摄影海报显示并完成模拟器截图验证。
 - Android TV 播放器已实现固定三行电影字幕模板、底部暗场、字幕阴影和菜单 overlay。
 - 文档已收敛为两份权威文件：`DEVELOPMENT_STANDARDS_API.md` 与 `PROJECT_DEVELOPMENT.md`。
 
@@ -306,3 +306,42 @@ P2：
 - 飞牛真实部署拉取 `latest` 后的管理端关于页显示。
 - 实体 Android TV 设备从飞牛后端下载并安装 `1.0.3`。
 - 实体 TV 面板播放效果截图验收。
+
+2026-06-13 TV 版本列表与 Android 9 更新链路修复：
+- 当前修改目标：后台 TV 版本上传页改为列表式展示历史 APK，并明确显示每个版本的强制更新开关状态；Android TV 在 Android 9 盒子上点击更新后应先下载并校验 APK，再在安装阶段处理未知来源安装权限和系统安装器唤起。
+- 当前状态：后端 `TvReleaseInfo` 已增加 `versions` 列表；上传 APK 时除 `latest.json` 外同步写入同名版本元数据 JSON；管理端 TV 版本页新增“已上传版本”表格，显示最新标识、versionName、versionCode、强制更新、文件状态、大小、发布时间、APK 文件和 SHA256；上传表单强制更新开关支持开启/关闭并显示当前状态。
+- Android 更新链路：下载前不再因为 Android 8+ 未授予未知来源安装权限而中断；APK 下载、大小校验和 SHA256 校验完成后进入待安装状态；点击安装时如果缺少权限则打开权限页并保留待安装状态，授权后可再次点击安装；Android 7+ 优先使用 `ACTION_INSTALL_PACKAGE`，不支持时回退到 `ACTION_VIEW`。
+- 验证结果：`corepack pnpm -F @wrjdyk/backend-api test -- --runInBand app.controller.spec.ts` 通过；`corepack pnpm -F @vben/web-antd run typecheck` 通过；`.\gradlew.bat :app:testDebugUnitTest --tests com.wangrizhongxian.tv.AppUpdateManagerTest` 通过。
+- 后续注意：仍需要在真实 Android 9 电视盒子上做端到端验证，包括未授权未知来源时点击安装是否进入权限页、授权返回后是否能再次拉起安装器、安装完成后是否成功升级到目标 `versionCode`。
+- 按计划下一步：继续阶段 A 的真实 TV/ADB 播放效果验收，优先采集暗图、亮图、人像图、横图、竖图截图；若字幕字体形态仍偏离设计稿，再进入可随 APK 发布的中文字体资源引入。
+
+2026-06-13 TV 摄影海报字体预览调整：
+- 当前修改目标：确认 A 版原始字体宽度，并将竖屏尚首追光手写标题在现有基础上放大 15%。
+- 当前状态：视觉预览已将 A 版标记为当前选择；仅竖屏 A 版手写标题从 `11px` 调整为 `12.65px`，横屏排版、LXGW 正文字体和 B 版保持不变。
+- 未来修改计划：浏览器确认竖屏标题比例后，再将最终版式规格整理为 Android TV 实现计划；未确认前不修改正式 TV 播放代码。
+
+2026-06-13 TV 摄影海报手写标题 50% 放大预览：
+- 当前修改目标：观察所有手写标题统一放大 50% 后的横屏与竖屏效果。
+- 当前状态：A、B 两版横屏和竖屏标题均按上一版实际字号乘以 `1.5`；其他文字、位置、间距和字体不变，正式 Android TV 播放代码未修改。
+- 未来修改计划：根据浏览器视觉结果确认最终标题字号，再整理 Android TV 端实现规格。
+
+2026-06-13 Android TV A 版摄影海报显示实现：
+- 当前修改目标：将已确认的 A 版原始宽度字体效果应用到 Android TV 播放界面，当前阶段不显示英文，也不修改后端、AI 提示词或共享接口。
+- 当前状态：Android TV 已内置尚首追光与 LXGW 两份项目字体；中间手写标题使用尚首追光常规字重，4K 设计字号从 `160` 放大 50% 到 `240`；上下中文信息使用 LXGW；TV 字幕整理阶段会移除英文字母，保留现有三段数据顺序。定向 `MemoryExhibitionPlayerTest` 已通过。
+- 实现架构：后端 `GET /api/device/playlist` 只下发文案、`displayTemplateId`、`fontStyle`、`fontWeight` 等轻量字段；字体文件和排版模板由 TV APK 本地持有，避免每张照片重复下载字体。字体族定义为进程级稳定对象，不随文案重复创建。
+- 包体积与性能：Release APK 从 `8.21 MB` 增加到 `13.55 MB`，两份完整中文字体实际增加 `5.34 MB`。模拟器播放器现代帧统计为 `13 / 3268` 卡顿帧（`0.40%`），50/90/95/99 分位为 `9/10/10/15ms`；总 PSS 约 `100 MB`。该数据仅作初步参考，真实电视盒子仍需验证；当前更重的渲染路径是双层图片、模糊和持续缩放动画，而不是字体文件。
+- 英文处理：TV 端当前移除字幕中的英文字母；如果 AI 主文案过滤后为空，会继续回退到中文 `captionText`，避免有中文备用文案时出现空字幕。照片画面本身包含的英文不做图像处理。
+- 验证结果：Android TV 全量 `testDebugUnitTest` 通过，Debug 与 Release 构建通过；最新 Debug APK 已覆盖安装到 `emulator-5554` 并进入播放页。截图确认中间尚首追光标题、顶部 LXGW 中文说明和英文字幕过滤生效。截图保存于 `build/android-tv-a-style-latest.png`。
+- 未来修改计划：在真实电视盒子上采集播放截图与帧数据。后续英文或文案结构调整通过 AI 识别提示词单独处理。
+
+2026-06-13 Android TV 1.0.4 与项目 1.0.8 发布准备：
+- 当前修改目标：为 Android TV A 版摄影海报显示修复更新项目版本与电视端版本，并推送 GitHub。
+- 当前状态：Android TV 版本已提升到 `versionCode 9 / versionName 1.0.4`；管理端发布版本已提升到 `1.0.8`；飞牛/latest compose 默认 TV 更新元数据、发布验证脚本、manifest 测试、Android TV README 和发布规范文档已同步。
+- 验证结果：`.\scripts\release\verify-local-release.ps1` 通过；Android APK 元数据确认为 `versionCode=9`、`versionName=1.0.4`；模拟器播放截图确认字幕居中、长手写标题单行完整显示、底部暗底为全屏向上渐变。截图保存于 `build/android-tv-a-style-gradient-clean.png`。
+- 未来修改计划：生成正式发布提交并推送 `main`；随后创建并推送 `tv-v1.0.4` 标签，等待 GitHub Actions 产出正式签名 APK。
+
+2026-06-13 竖版布局、旁白刷新与照片顶部信息完善：
+- 当前修改目标：竖版照片按照片画框缩小字幕并提供画内覆盖、画外侧栏两种模板；TV 每次收到新播放列表后立即使用最新三段旁白；顶部时间、地点、天气优先使用照片已保存信息，缺失时才采用 AI 有证据的推断；业务提示词与标准输出字段要求以本地文件维护并随后端镜像发布。
+- 当前状态：共享播放协议已增加照片宽高、方向和顶部信息；SQLite schema 版本提升到 18，在生成派生图时持久化原图方向，并在升级时将已有数据库刷新到本次随包发布的两份提示词；后端播放列表优先组合照片字段，缺失项再使用 `observed_meta`；Android TV 已移除按 `photoId` 缓存旁白的逻辑，竖版默认使用画内覆盖模板，`portrait_side` 使用画外侧栏模板；生产 Docker 镜像会复制提示词目录。
+- 当前验证：`.\scripts\release\verify-local-release.ps1` 完整通过；后端两个套件 `93/93`、管理端 4 个测试文件 `5/5`、后端 build、管理端 typecheck/production build、两份 Compose 展开、Android 全量 `testDebugUnitTest`、Debug/Release 构建及 APK 元数据检查均成功。Debug APK 为 `17,467,250` 字节，SHA256 `640C00CE747AF1D3DC7E8011FB23F62EBD2DB22108A2002DF90311F827594D6B`；本地 Release 为未签名包，只用于构建验证。发布预检会确认提示词目录、业务 Vision 文件、标准输出契约及 Docker 镜像复制规则；发布脚本从后端目录调用该包本地的 `jest.CMD --runInBand`，避免两个后端套件并行清理共享测试目录。内置浏览器拒绝访问本地预览地址，因此本轮无法重新做网页视觉验收，改用既有设计坐标、派生图尺寸关系、单元测试和 Android 构建验证。
+- 未来修改计划：检查最终 diff 并只纳入本任务相关文件；推送 `main` 和 `tv-v1.0.4` 标签；发布后验证 GHCR 镜像及 GitHub Actions 正式签名 APK。真实 Android 9 盒子的安装授权流程和实体 TV 面板竖版视觉效果仍需设备验收。

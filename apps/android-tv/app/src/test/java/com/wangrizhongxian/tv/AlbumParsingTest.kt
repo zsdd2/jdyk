@@ -183,6 +183,33 @@ class AlbumParsingTest {
   }
 
   @Test
+  fun parsePlaylistItemKeepsMediaOrientationAndTopMeta() {
+    val item = parsePlaylistItem(
+      "http://127.0.0.1:3999/api",
+      JSONObject(
+        """
+        {
+          "photoId": "p_portrait",
+          "albumId": "album_1",
+          "albumName": "竖图测试",
+          "displayImageUrl": "/api/photos/p_portrait/display",
+          "durationMs": 12000,
+          "caption": {"text": "竖图旁白", "title": "竖版照片", "style": "warm"},
+          "media": {"width": 1080, "height": 1920, "orientation": "portrait"},
+          "topMeta": {"time": "14:36", "location": "草原腹地", "weather": "Sunny / Clear"}
+        }
+        """.trimIndent(),
+      ),
+    )
+
+    assertEquals(1080, item.mediaWidth)
+    assertEquals(1920, item.mediaHeight)
+    assertEquals("portrait", item.mediaOrientation)
+    assertEquals("14:36 · 草原腹地 · Sunny / Clear", item.topMetaLine)
+    assertEquals(true, item.isPortrait)
+  }
+
+  @Test
   fun loginDeviceReturnsFailureForMalformedServerUrlInsteadOfThrowing() = runBlocking {
     val result = loginDevice(
       serverUrl = "http://127.0.0.1:3999http://127.0.0.1:3999",

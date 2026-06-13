@@ -4,6 +4,7 @@ import {
   existsSync,
   mkdirSync,
   readFileSync,
+  readdirSync,
   statSync,
   writeFileSync,
 } from 'node:fs';
@@ -186,11 +187,26 @@ export interface TvAppUpdateManifest {
   versionName: string;
 }
 
+export interface TvReleaseVersion {
+  apkUrl: string;
+  fileExists: boolean;
+  fileName: string;
+  forceUpdate: boolean;
+  isLatest: boolean;
+  publishedAt: string;
+  releaseNotes: string;
+  sha256: string;
+  sizeBytes: number;
+  versionCode: number;
+  versionName: string;
+}
+
 export interface TvReleaseInfo {
   fileExists: boolean;
   fileName: string;
   manifest: TvAppUpdateManifest;
   releasesDirectory: string;
+  versions: TvReleaseVersion[];
 }
 
 export interface TvReleaseUploadInput {
@@ -603,6 +619,7 @@ export class AppService implements OnModuleDestroy {
       fileName,
       manifest,
       releasesDirectory,
+      versions: listTvReleaseVersions(releasesDirectory, manifest, fileName),
     };
   }
 
@@ -641,6 +658,10 @@ export class AppService implements OnModuleDestroy {
       versionCode,
       versionName,
     };
+    writeFileSync(
+      getTvReleaseMetadataPath(releasesDirectory, fileName),
+      `${JSON.stringify(manifest, null, 2)}\n`,
+    );
     writeFileSync(
       this.getTvReleaseManifestPath(),
       `${JSON.stringify(manifest, null, 2)}\n`,
@@ -2571,6 +2592,7 @@ export function buildUnifiedVisionSystemPrompt(settings: AiRuntimeSettings): str
     '必须返回 schema_version 为 "photo_tv_payload_v1" 的 JSON 对象。',
     '必须包含且只能围绕这些顶层对象：schema_version、photo_analysis、evaluation、classification、narration、tv_layout、push_decision。',
     'photo_analysis.caption：100-200 字中文画面描述，直接描述看到的内容，不要以“照片中/画面里/这张图片”等开头。',
+    'photo_analysis.observed_meta：必须包含 time、location、weather、evidence；没有明确证据时必须返回空字符串。',
     'evaluation.memory_score 与 evaluation.beauty_score：0-100 数值，允许一位小数。',
     'evaluation.is_trash：boolean，低俗违规、账单收据、广告、杂物、测试图、屏幕截图、严重模糊图为 true 或低分。',
     'evaluation.reason：不超过 80 字中文评分理由。',
@@ -2838,7 +2860,9 @@ function normalizePhotoTvPayloadV1(record: Record<string, unknown>): UnifiedAiIn
   const primaryText = getObjectRecord(typography.primary_text);
   const secondaryText = getObjectRecord(typography.secondary_text);
   const handwritingText = getObjectRecord(typography.handwriting_text);
-  const layout = getObjectRecord(tvLayout.layout);
+  const layoutRecord = getObjectRecord(tvLayout.layout);
+  const layout = Object.keys(layoutRecord).length > 0 ? layoutRecord : layoutPlan;
+  const observedMeta = normalizeObservedMeta(photoAnalysis.observed_meta);
   const narrationVariants = normalizeNarrationVariants(narration.variants);
   const selectedNarrationIndex = normalizeNarrationIndex(
     record.selected_narration_index,
@@ -2867,12 +2891,16 @@ function normalizePhotoTvPayloadV1(record: Record<string, unknown>): UnifiedAiIn
     aiBeautyScore: beautyScore,
     aiComment: comment,
     aiFontStyle: normalizeUnifiedFontStyle(
-      primaryText.font_family ?? handwritingText.font_family ?? secondaryText.font_family,
+      primaryText.font_family ??
+      handwritingText.font_family ??
+      secondaryText.font_family ??
+      layout.font_style,
     ),
     aiIsTrash: classification.tv_suitability === 'low',
-    aiLayoutPosition: normalizeUnifiedLayoutPosition(layout.position_anchor),
+    aiLayoutPosition: normalizeUnifiedLayoutPosition(layout.position_anchor ?? layout.position),
     aiMemoryScore: memoryScore,
     aiNarrationVariants: narrationVariants,
+    aiObservedMeta: observedMeta,
     aiReason: typeof evaluation.reason === 'string'
       ? evaluation.reason.trim()
       : typeof photoAnalysis.caption === 'string'
@@ -2927,7 +2955,10 @@ function validatePhotoTvPayloadV1(input: {
   if (Object.keys(input.tvLayout).length === 0) {
     missing.push('tv_layout');
   }
-  if (typeof input.layout.position_anchor !== 'string') {
+  if (
+    typeof input.layout.position_anchor !== 'string' &&
+    typeof input.layout.position !== 'string'
+  ) {
     missing.push('tv_layout.layout.position_anchor');
   }
   if (typeof input.layout.safe_area !== 'object' || input.layout.safe_area === null) {
@@ -2939,6 +2970,15 @@ function validatePhotoTvPayloadV1(input: {
   if (missing.length > 0) {
     throw new Error(`Invalid photo_tv_payload_v1 response: missing ${missing.join(', ')}`);
   }
+}
+
+function normalizeObservedMeta(value: unknown): NonNullable<UnifiedAiInsight['aiObservedMeta']> {
+  const observedMeta = getObjectRecord(value);
+  return {
+    location: typeof observedMeta.location === 'string' ? observedMeta.location.trim() : '',
+    time: typeof observedMeta.time === 'string' ? observedMeta.time.trim() : '',
+    weather: typeof observedMeta.weather === 'string' ? observedMeta.weather.trim() : '',
+  };
 }
 
 function normalizeNarrationVariants(value: unknown): Array<{
@@ -3304,6 +3344,80 @@ function normalizeBooleanEnv(value?: string): boolean {
   return normalized === '1' || normalized === 'true' || normalized === 'yes';
 }
 
+function listTvReleaseVersions(
+  releasesDirectory: string,
+  latestManifest: TvAppUpdateManifest,
+  latestFileName: string,
+): TvReleaseVersion[] {
+  const fileNames = new Set<string>();
+  if (existsSync(releasesDirectory)) {
+    try {
+      for (const entry of readdirSync(releasesDirectory, { withFileTypes: true })) {
+        if (entry.isFile() && isTvReleaseApkFileName(entry.name)) {
+          fileNames.add(entry.name);
+        }
+      }
+    } catch {
+      // Directory readability is reported through the empty list; the latest row is kept below.
+    }
+  }
+  if (latestFileName) {
+    fileNames.add(latestFileName);
+  }
+
+  return Array.from(fileNames)
+    .map((fileName) =>
+      buildTvReleaseVersion(releasesDirectory, fileName, latestManifest, latestFileName),
+    )
+    .sort(compareTvReleaseVersions);
+}
+
+function buildTvReleaseVersion(
+  releasesDirectory: string,
+  fileName: string,
+  latestManifest: TvAppUpdateManifest,
+  latestFileName: string,
+): TvReleaseVersion {
+  const releasePath = resolve(releasesDirectory, fileName);
+  const isSafePath = releasePath.startsWith(`${releasesDirectory}${pathSeparator()}`);
+  const fileExists = Boolean(
+    isSafePath &&
+    existsSync(releasePath) &&
+    statSync(releasePath).isFile(),
+  );
+  const fileSizeBytes = fileExists ? statSync(releasePath).size : 0;
+  const metadataManifest = readTvReleaseManifest(
+    getTvReleaseMetadataPath(releasesDirectory, fileName),
+  );
+  const isLatest = fileName === latestFileName;
+  const manifest = metadataManifest ?? (isLatest ? latestManifest : null);
+
+  return {
+    apkUrl: manifest?.apkUrl || `/releases/${fileName}`,
+    fileExists,
+    fileName,
+    forceUpdate: manifest?.forceUpdate ?? false,
+    isLatest,
+    publishedAt: manifest?.publishedAt || '',
+    releaseNotes: manifest?.releaseNotes || '',
+    sha256: manifest?.sha256 || '',
+    sizeBytes: manifest?.sizeBytes || fileSizeBytes,
+    versionCode: manifest?.versionCode || 0,
+    versionName: manifest?.versionName || inferTvVersionNameFromFileName(fileName),
+  };
+}
+
+function compareTvReleaseVersions(left: TvReleaseVersion, right: TvReleaseVersion): number {
+  if (left.isLatest !== right.isLatest) return left.isLatest ? -1 : 1;
+  if (left.versionCode !== right.versionCode) return right.versionCode - left.versionCode;
+  const leftTime = Date.parse(left.publishedAt || '');
+  const rightTime = Date.parse(right.publishedAt || '');
+  if (Number.isFinite(leftTime) && Number.isFinite(rightTime) && leftTime !== rightTime) {
+    return rightTime - leftTime;
+  }
+  return right.fileName.localeCompare(left.fileName);
+}
+
 function readTvReleaseManifest(manifestPath: string): TvAppUpdateManifest | null {
   if (!existsSync(manifestPath)) return null;
   try {
@@ -3358,6 +3472,21 @@ function normalizeTvVersionName(value: unknown): string {
 function normalizeTvReleaseFileNameFromUrl(value: string): string {
   const lastSegment = value.split(/[\\/]/).pop()?.split('?')[0]?.trim() ?? '';
   return /^[A-Za-z0-9._-]+\.apk$/.test(lastSegment) ? lastSegment : '';
+}
+
+function isTvReleaseApkFileName(value: string): boolean {
+  return /^[A-Za-z0-9._-]+\.apk$/i.test(value);
+}
+
+function inferTvVersionNameFromFileName(fileName: string): string {
+  const normalized = fileName.replace(/\.apk$/i, '');
+  return normalized.startsWith('wangri-tv-')
+    ? normalized.slice('wangri-tv-'.length)
+    : normalized;
+}
+
+function getTvReleaseMetadataPath(releasesDirectory: string, fileName: string): string {
+  return join(releasesDirectory, fileName.replace(/\.apk$/i, '.json'));
 }
 
 function pathSeparator(): '\\' | '/' {

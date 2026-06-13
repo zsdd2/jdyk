@@ -29,6 +29,7 @@ WORKDIR /workspace
 COPY --from=builder /opt/backend/node_modules ./node_modules
 COPY --from=builder /opt/backend/package.json ./package.json
 COPY --from=builder /workspace/apps/backend-api/dist ./apps/backend-api/dist
+COPY --from=builder /workspace/apps/backend-api/prompts ./apps/backend-api/prompts
 
 RUN mkdir -p \
   /workspace/apps/backend-api/data \

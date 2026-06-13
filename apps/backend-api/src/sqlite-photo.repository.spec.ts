@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, rmSync, statSync, writeFileSync } from 'fs';
+import { existsSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'fs';
 import { join } from 'path';
 import { DatabaseSync } from 'node:sqlite';
 import { SqlitePhotoRepository } from './sqlite-photo.repository';
@@ -159,6 +159,14 @@ describe('SqlitePhotoRepository', () => {
           name: 'feiniu_settings',
           version: 16,
         },
+        {
+          name: 'photo_media_dimensions',
+          version: 17,
+        },
+        {
+          name: 'refresh_bundled_ai_prompts',
+          version: 18,
+        },
       ]);
     } finally {
       database.close();
@@ -260,6 +268,64 @@ describe('SqlitePhotoRepository', () => {
     expect(settings.outputContractPrompt).toContain('photo_tv_payload_v1');
     expect(settings.outputContractPrompt).toContain('narration_options');
     expect(settings.outputContractPrompt).toContain('layout_plan');
+  });
+
+  it('loads the default AI prompts from the local prompt files', () => {
+    repository = new SqlitePhotoRepository({
+      databasePath,
+      photoRoot,
+    });
+
+    repository.initialize();
+    const settings = repository.getAiSettings();
+    const businessVisionPrompt = readFileSync(
+      join(process.cwd(), 'prompts', '业务 Vision 提示词.md'),
+      'utf8',
+    ).trim();
+    const outputContractPrompt = readFileSync(
+      join(process.cwd(), 'prompts', '标准输出字段要求.md'),
+      'utf8',
+    ).trim();
+
+    expect(settings.scoringPrompt).toBe(businessVisionPrompt);
+    expect(settings.outputContractPrompt).toBe(outputContractPrompt);
+    expect(settings.outputContractPrompt).toContain('photo_analysis.observed_meta');
+    expect(settings.outputContractPrompt).toContain('没有明确证据时必须返回空字符串');
+  });
+
+  it('refreshes bundled AI prompts when upgrading an existing database', () => {
+    repository = new SqlitePhotoRepository({
+      databasePath,
+      photoRoot,
+    });
+    repository.initialize();
+    repository.close();
+    repository = null;
+
+    const database = new DatabaseSync(databasePath);
+    try {
+      database.prepare(
+        `
+          UPDATE ai_settings
+          SET scoring_prompt = 'old business prompt',
+              output_contract_prompt = 'old output contract'
+          WHERE id = 1
+        `,
+      ).run();
+      database.prepare('DELETE FROM schema_migrations WHERE version = 18').run();
+    } finally {
+      database.close();
+    }
+
+    repository = new SqlitePhotoRepository({
+      databasePath,
+      photoRoot,
+    });
+    repository.initialize();
+
+    const settings = repository.getAiSettings();
+    expect(settings.scoringPrompt).toContain('为家庭电视播放生成 5 组三段式中文旁白');
+    expect(settings.outputContractPrompt).toContain('photo_analysis.observed_meta');
   });
 
   it('persists AI recognition task progress across repository instances', () => {
@@ -909,6 +975,26 @@ describe('SqlitePhotoRepository', () => {
       }),
       displayImageUrl: '/api/derivatives/p_001/tv_blur_fill.webp',
       thumbnailUrl: '/api/derivatives/p_001/thumb_300.webp',
+    });
+  });
+
+  it('persists portrait source dimensions for TV playlist layout selection', async () => {
+    const derivativeRoot = join(testDataDir, 'derivatives');
+    repository = new SqlitePhotoRepository({
+      databasePath,
+      derivativeRoot,
+      photoRoot,
+    });
+
+    await repository.ensurePhotoDerivatives('p_003');
+    const portraitItem = repository
+      .listPlaylistItems('family-travel')
+      .find((item) => item.photoId === 'p_003');
+
+    expect(portraitItem?.media).toEqual({
+      height: 4930,
+      orientation: 'portrait',
+      width: 3698,
     });
   });
 

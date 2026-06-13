@@ -15,6 +15,7 @@ import {
   InputNumber,
   message,
   Switch,
+  Table,
   Tag,
   Upload,
 } from 'ant-design-vue';
@@ -36,6 +37,17 @@ const form = reactive({
 });
 
 const manifest = computed(() => releaseInfo.value?.manifest);
+const releaseVersions = computed(() => releaseInfo.value?.versions ?? []);
+const releaseColumns = [
+  { dataIndex: 'versionName', key: 'versionName', title: '版本号', width: 140 },
+  { dataIndex: 'versionCode', key: 'versionCode', title: '版本码', width: 100 },
+  { dataIndex: 'forceUpdate', key: 'forceUpdate', title: '强制更新', width: 110 },
+  { dataIndex: 'fileExists', key: 'fileExists', title: '文件状态', width: 110 },
+  { dataIndex: 'sizeBytes', key: 'sizeBytes', title: '文件大小', width: 110 },
+  { dataIndex: 'publishedAt', key: 'publishedAt', title: '发布时间', width: 190 },
+  { dataIndex: 'fileName', key: 'fileName', title: 'APK 文件', width: 220 },
+  { dataIndex: 'sha256', key: 'sha256', title: 'SHA256', width: 320 },
+];
 
 async function loadReleaseInfo() {
   loading.value = true;
@@ -93,6 +105,12 @@ function formatSize(value?: number) {
   return `${(value / 1024 / 1024).toFixed(2)} MB`;
 }
 
+function formatTableValue(record: Record<string, unknown>, dataIndex: unknown) {
+  if (typeof dataIndex !== 'string') return '-';
+  const value = record[dataIndex];
+  return value === undefined || value === null || value === '' ? '-' : String(value);
+}
+
 onMounted(loadReleaseInfo);
 </script>
 
@@ -144,6 +162,46 @@ onMounted(loadReleaseInfo);
         </Descriptions>
       </Card>
 
+      <Card title="已上传版本">
+        <Table
+          :columns="releaseColumns"
+          :data-source="releaseVersions"
+          :loading="loading"
+          :pagination="false"
+          :row-key="(record) => record.fileName"
+          :scroll="{ x: 1300 }"
+          size="small"
+        >
+          <template #bodyCell="{ column, record }">
+            <template v-if="column.key === 'versionName'">
+              <span>{{ record.versionName || '-' }}</span>
+              <Tag v-if="record.isLatest" class="latest-tag" color="blue">
+                最新
+              </Tag>
+            </template>
+            <template v-else-if="column.key === 'forceUpdate'">
+              <Tag :color="record.forceUpdate ? 'red' : 'default'">
+                {{ record.forceUpdate ? '开启' : '关闭' }}
+              </Tag>
+            </template>
+            <template v-else-if="column.key === 'fileExists'">
+              <Tag :color="record.fileExists ? 'success' : 'error'">
+                {{ record.fileExists ? '存在' : '缺失' }}
+              </Tag>
+            </template>
+            <template v-else-if="column.key === 'sizeBytes'">
+              {{ formatSize(record.sizeBytes) }}
+            </template>
+            <template v-else-if="column.key === 'sha256'">
+              <span class="sha-text">{{ record.sha256 || '-' }}</span>
+            </template>
+            <template v-else>
+              {{ formatTableValue(record, column.dataIndex) }}
+            </template>
+          </template>
+        </Table>
+      </Card>
+
       <Card title="上传新版本">
         <Form layout="vertical">
           <Form.Item label="版本号 versionName" required>
@@ -159,7 +217,16 @@ onMounted(loadReleaseInfo);
             />
           </Form.Item>
           <Form.Item label="强制更新">
-            <Switch v-model:checked="form.forceUpdate" />
+            <div class="force-update-row">
+              <Switch
+                v-model:checked="form.forceUpdate"
+                checked-children="开启"
+                un-checked-children="关闭"
+              />
+              <Tag :color="form.forceUpdate ? 'red' : 'default'">
+                {{ form.forceUpdate ? '已开启' : '已关闭' }}
+              </Tag>
+            </div>
           </Form.Item>
           <Form.Item label="更新说明">
             <Input.TextArea
@@ -195,5 +262,24 @@ onMounted(loadReleaseInfo);
 
 .version-code-input {
   width: 260px;
+}
+
+.force-update-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.latest-tag {
+  margin-left: 8px;
+}
+
+.sha-text {
+  display: inline-block;
+  max-width: 300px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  vertical-align: bottom;
+  white-space: nowrap;
 }
 </style>

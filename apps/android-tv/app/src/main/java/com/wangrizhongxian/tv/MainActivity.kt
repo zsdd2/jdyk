@@ -2,6 +2,7 @@
 
 import android.app.Activity
 import android.content.Context
+import android.os.Build
 import android.os.Bundle
 import android.provider.Settings
 import android.view.KeyEvent as AndroidKeyEvent
@@ -226,7 +227,10 @@ private fun TvMemoryApp() {
       updateUiState = TvUpdateUiState.Error("无法获取当前窗口")
       return
     }
-    if (!AppUpdateManager.canRequestPackageInstalls(activity)) {
+    if (
+      AppUpdateManager.shouldBlockDownloadForInstallPermission(Build.VERSION.SDK_INT) &&
+      !AppUpdateManager.canRequestPackageInstalls(activity)
+    ) {
       AppUpdateManager.openInstallPermission(activity)
       updateUiState = TvUpdateUiState.Error("请允许本应用安装未知来源应用后重试")
       return
@@ -252,6 +256,10 @@ private fun TvMemoryApp() {
     val activity = context as? Activity
     if (activity == null) {
       updateUiState = TvUpdateUiState.Error("无法获取当前窗口")
+      return
+    }
+    if (!AppUpdateManager.canRequestPackageInstalls(activity)) {
+      AppUpdateManager.openInstallPermission(activity)
       return
     }
     AppUpdateManager.launchInstall(activity, file).onFailure { error ->
@@ -2723,16 +2731,29 @@ data class TvPlaylistItem(
   val layoutTemplateId: String,
   val layoutPosition: String,
   val location: String,
+  val mediaHeight: Int,
+  val mediaOrientation: String,
+  val mediaWidth: Int,
   val narrationVariants: List<TvNarrationVariant>,
   val photoId: String,
   val safeArea: TvSafeArea,
   val takenAt: String,
   val textColor: String,
+  val topMetaLocation: String,
+  val topMetaTime: String,
+  val topMetaWeather: String,
 ) {
   val metaLine: String
     get() = listOf(albumName, takenAt, location)
       .filter { it.isNotBlank() }
       .joinToString(" 路 ")
+  val topMetaLine: String
+    get() = listOf(topMetaTime, topMetaLocation, topMetaWeather)
+      .filter { it.isNotBlank() }
+      .joinToString(" · ")
+  val isPortrait: Boolean
+    get() = mediaOrientation.equals("portrait", ignoreCase = true) ||
+      (mediaWidth > 0 && mediaHeight > mediaWidth)
 }
 
 data class TvSafeArea(
@@ -3001,6 +3022,8 @@ fun parsePlaylistItem(apiBase: String, json: JSONObject): TvPlaylistItem {
   val caption = json.optJSONObject("caption")
   val display = json.optJSONObject("display")
   val layout = json.optJSONObject("layout")
+  val media = json.optJSONObject("media")
+  val topMeta = json.optJSONObject("topMeta")
   val animationTemplateId = display?.optString("animationTemplateId").orEmpty().ifBlank {
     json.optString("animationTemplateId")
   }
@@ -3037,11 +3060,17 @@ fun parsePlaylistItem(apiBase: String, json: JSONObject): TvPlaylistItem {
     layoutTemplateId = layoutTemplateId,
     layoutPosition = layout?.optString("position").orEmpty().ifBlank { "left_bottom" },
     location = json.optString("location"),
+    mediaHeight = media?.optInt("height", 0) ?: 0,
+    mediaOrientation = media?.optString("orientation", "unknown") ?: "unknown",
+    mediaWidth = media?.optInt("width", 0) ?: 0,
     narrationVariants = parseNarrationVariants(json.optJSONArray("narrationVariants")),
     photoId = json.optString("photoId"),
     safeArea = parseSafeArea(layout?.optJSONObject("safeArea")),
     takenAt = json.optString("takenAt"),
     textColor = display?.optString("textColor").orEmpty().ifBlank { "#FFFFFF" },
+    topMetaLocation = topMeta?.optString("location").orEmpty(),
+    topMetaTime = topMeta?.optString("time").orEmpty(),
+    topMetaWeather = topMeta?.optString("weather").orEmpty(),
   )
 }
 

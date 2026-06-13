@@ -56,9 +56,11 @@ import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.font.Font
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -106,7 +108,7 @@ fun MemoryExhibitionPlayer(
       ),
       label = "caption-alpha",
     )
-  val narrationVariant = remember(item.photoId) { item.narrationVariants.firstOrNull() }
+  val narrationVariant = item.narrationVariants.firstOrNull()
 
   LaunchedEffect(item.photoId, item.durationMs) {
     motionProgress.snapTo(0f)
@@ -441,27 +443,27 @@ private fun CaptionStage(
   textOffset: Float,
 ) {
   BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
-    val safeArea = cinematicSubtitleArea()
     val lines = item.cinematicCaptionLines(narrationVariant)
     val density = LocalDensity.current
-    val designLines = cinematicCaptionDesignLines()
+    val designLines = cinematicCaptionDesignLines(item)
+    val safeArea = cinematicSubtitleArea(designLines)
     val stageWidth = maxWidth
     val stageHeight = maxHeight
     Box(
       modifier = Modifier
-        .padding(
-          start = stageWidth * safeArea.x,
-          top = stageHeight * safeArea.y,
-        )
-        .width(stageWidth * safeArea.w)
-        .height(stageHeight * safeArea.h)
+        .fillMaxSize()
         .background(
           Brush.verticalGradient(
-            listOf(Color.Transparent, Color(0x36000000), Color(0x50000000)),
+            colorStops = arrayOf(
+              0.00f to Color.Transparent,
+              0.54f to Color.Transparent,
+              0.76f to Color(0x52000000),
+              1.00f to Color(0xB8000000),
+            ),
           ),
         ),
     )
-    Column(
+    Box(
       modifier = Modifier
         .padding(
           start = stageWidth * safeArea.x,
@@ -473,7 +475,6 @@ private fun CaptionStage(
           alpha = textAlpha.coerceIn(0f, 1f)
           translationY = textOffset
         },
-      horizontalAlignment = Alignment.CenterHorizontally,
     ) {
       designLines.forEachIndexed { index, spec ->
         val line = lines.getOrNull(index) ?: return@forEachIndexed
@@ -482,11 +483,13 @@ private fun CaptionStage(
           index == lines.lastIndex -> CaptionRole.Soft
           else -> CaptionRole.Normal
         }
+        val fittedFontSize = cinematicCaptionFittedFontSize(line, spec, role)
+        val fittedLineHeight = (fittedFontSize.toFloat() * spec.lineHeight / spec.fontSize).toInt()
         val fontSize = with(density) {
-          (stageHeight.toPx() * spec.fontSize / CinematicCaptionCanvasHeight).toSp()
+          (stageHeight.toPx() * fittedFontSize / CinematicCaptionCanvasHeight).toSp()
         }
         val lineHeight = with(density) {
-          (stageHeight.toPx() * spec.lineHeight / CinematicCaptionCanvasHeight).toSp()
+          (stageHeight.toPx() * fittedLineHeight / CinematicCaptionCanvasHeight).toSp()
         }
         val letterSpacing = with(density) {
           (stageHeight.toPx() * spec.letterSpacing / CinematicCaptionCanvasHeight).toSp()
@@ -500,6 +503,8 @@ private fun CaptionStage(
             .width(stageWidth * (spec.width / CinematicCaptionCanvasWidth))
             .height(stageHeight * (spec.height / CinematicCaptionCanvasHeight)),
           maxLines = 1,
+          overflow = TextOverflow.Clip,
+          softWrap = false,
           text = cinematicCaptionText(line, role),
           style = cinematicSubtitleTextStyle(
             role = role,
@@ -556,33 +561,51 @@ internal data class CinematicCaptionLineSpec(
   val width: Int,
 )
 
+internal data class CinematicPhotoFrame(
+  val height: Int,
+  val left: Int,
+  val top: Int,
+  val width: Int,
+)
+
 private const val CinematicCaptionCanvasWidth = 3840f
 private const val CinematicCaptionCanvasHeight = 2160f
+private val cinematicHandwrittenFontFamily = FontFamily(Font(R.font.shangshou_zhuiguang))
+private val cinematicSupportingFontFamily = FontFamily(Font(R.font.lxgw_heart_serif_chs))
+
+private fun cinematicCaptionDesignLines(item: TvPlaylistItem): List<CinematicCaptionLineSpec> {
+  if (!item.isPortrait) return cinematicCaptionDesignLines()
+  return if (item.layoutTemplateId.equals("portrait_side", ignoreCase = true)) {
+    portraitSideCaptionDesignLines()
+  } else {
+    portraitOverlayCaptionDesignLines()
+  }
+}
 
 internal fun cinematicCaptionDesignLines(): List<CinematicCaptionLineSpec> {
   return listOf(
     CinematicCaptionLineSpec(
-      left = 1455,
+      left = 730,
       top = 1524,
-      width = 889,
+      width = 2380,
       height = 90,
       fontSize = 88,
       lineHeight = 104,
       letterSpacing = 42,
     ),
     CinematicCaptionLineSpec(
-      left = 912,
+      left = 730,
       top = 1691,
-      width = 2067,
-      height = 199,
-      fontSize = 160,
-      lineHeight = 200,
+      width = 2380,
+      height = 240,
+      fontSize = 240,
+      lineHeight = 240,
       letterSpacing = 2,
     ),
     CinematicCaptionLineSpec(
-      left = 1463,
-      top = 1941,
-      width = 917,
+      left = 930,
+      top = 1960,
+      width = 1980,
       height = 84,
       fontSize = 84,
       lineHeight = 100,
@@ -591,8 +614,127 @@ internal fun cinematicCaptionDesignLines(): List<CinematicCaptionLineSpec> {
   )
 }
 
+internal fun portraitPhotoFrame(): CinematicPhotoFrame {
+  return CinematicPhotoFrame(
+    left = 1313,
+    top = 0,
+    width = 1215,
+    height = 2160,
+  )
+}
+
+internal fun portraitSidePhotoFrame(): CinematicPhotoFrame {
+  return CinematicPhotoFrame(
+    left = 860,
+    top = 0,
+    width = 1215,
+    height = 2160,
+  )
+}
+
+internal fun portraitOverlayCaptionDesignLines(): List<CinematicCaptionLineSpec> {
+  return listOf(
+    CinematicCaptionLineSpec(
+      left = 1440,
+      top = 1420,
+      width = 960,
+      height = 66,
+      fontSize = 56,
+      lineHeight = 68,
+      letterSpacing = 18,
+    ),
+    CinematicCaptionLineSpec(
+      left = 1415,
+      top = 1538,
+      width = 1010,
+      height = 138,
+      fontSize = 128,
+      lineHeight = 138,
+      letterSpacing = 2,
+    ),
+    CinematicCaptionLineSpec(
+      left = 1480,
+      top = 1712,
+      width = 880,
+      height = 58,
+      fontSize = 48,
+      lineHeight = 60,
+      letterSpacing = 12,
+    ),
+  )
+}
+
+internal fun portraitSideCaptionDesignLines(): List<CinematicCaptionLineSpec> {
+  return listOf(
+    CinematicCaptionLineSpec(
+      left = 2240,
+      top = 760,
+      width = 760,
+      height = 78,
+      fontSize = 64,
+      lineHeight = 78,
+      letterSpacing = 22,
+    ),
+    CinematicCaptionLineSpec(
+      left = 2180,
+      top = 910,
+      width = 960,
+      height = 170,
+      fontSize = 150,
+      lineHeight = 170,
+      letterSpacing = 2,
+    ),
+    CinematicCaptionLineSpec(
+      left = 2260,
+      top = 1135,
+      width = 720,
+      height = 68,
+      fontSize = 56,
+      lineHeight = 68,
+      letterSpacing = 16,
+    ),
+  )
+}
+
+internal fun cinematicCaptionFittedFontSize(
+  line: String,
+  spec: CinematicCaptionLineSpec,
+  role: CaptionRole,
+): Int {
+  val characters = line.count { !it.isWhitespace() }
+  if (characters <= 0) return spec.fontSize
+  val widthAtDesignSize = cinematicCaptionEstimatedTextWidth(line, spec.fontSize, spec.letterSpacing, role)
+  if (widthAtDesignSize <= spec.width) return spec.fontSize
+  val letterSpacingWidth = (characters - 1).coerceAtLeast(0) * spec.letterSpacing
+  val drawableWidth = (spec.width - letterSpacingWidth).coerceAtLeast(1)
+  val glyphRatio = cinematicCaptionAverageGlyphWidthRatio(role)
+  return kotlin.math.floor(drawableWidth / (characters * glyphRatio)).toInt().coerceAtLeast(28)
+}
+
+internal fun cinematicCaptionEstimatedTextWidth(
+  line: String,
+  fontSize: Int,
+  letterSpacing: Int,
+  role: CaptionRole = CaptionRole.Normal,
+): Float {
+  val characters = line.count { !it.isWhitespace() }
+  if (characters <= 0) return 0f
+  val letterSpacingWidth = (characters - 1).coerceAtLeast(0) * letterSpacing
+  return characters * fontSize * cinematicCaptionAverageGlyphWidthRatio(role) + letterSpacingWidth
+}
+
+private fun cinematicCaptionAverageGlyphWidthRatio(role: CaptionRole): Float =
+  when (role) {
+    CaptionRole.Emphasis -> 0.72f
+    CaptionRole.Normal -> 0.78f
+    CaptionRole.Soft -> 0.78f
+  }
+
 internal fun cinematicSubtitleArea(): TvSafeArea {
-  val lines = cinematicCaptionDesignLines()
+  return cinematicSubtitleArea(cinematicCaptionDesignLines())
+}
+
+private fun cinematicSubtitleArea(lines: List<CinematicCaptionLineSpec>): TvSafeArea {
   val left = lines.minOf { it.left }
   val top = lines.minOf { it.top }
   val right = lines.maxOf { it.left + it.width }
@@ -609,14 +751,19 @@ internal fun TvPlaylistItem.cinematicCaptionLines(
   narrationVariant: TvNarrationVariant?,
 ): List<String> {
   if (narrationVariant != null) {
-    return listOf(
+    val variantLines = listOf(
       narrationVariant.sceneDescription,
       narrationVariant.handwrittenThought,
       narrationVariant.lyricalClosure,
-    )
+    ).map(::withoutEnglishText)
+    return if (topMetaLine.isNotBlank()) {
+      listOf(topMetaLine, variantLines.getOrElse(1) { "" }, variantLines.getOrElse(2) { "" })
+    } else {
+      variantLines
+    }
   }
-  val text = aiComment
-    .ifBlank { captionText }
+  val text = withoutEnglishText(aiComment)
+    .ifBlank { withoutEnglishText(captionText) }
     .replace(Regex("\\s+"), " ")
     .trim('，', '。', ',', '.', ' ')
   if (text.isBlank()) return emptyList()
@@ -629,6 +776,14 @@ internal fun TvPlaylistItem.cinematicCaptionLines(
   val lineCount = if (text.length <= 24) 2 else 3
   val lineLength = kotlin.math.ceil(text.length.toDouble() / lineCount).toInt()
   return text.chunked(lineLength).take(3)
+}
+
+private fun withoutEnglishText(text: String): String {
+  return text
+    .replace(Regex("[A-Za-z]+(?:['’-][A-Za-z]+)*"), " ")
+    .replace(Regex("\\s+([，。；、,.!?！？])"), "$1")
+    .replace(Regex("\\s+"), " ")
+    .trim('，', '。', '；', '、', ',', '.', '!', '?', '！', '？', ' ')
 }
 
 private fun cinematicCaptionText(line: String, role: CaptionRole): AnnotatedString {
@@ -661,13 +816,13 @@ internal fun cinematicSubtitleTextStyle(
   return TextStyle(
     color = roleColor,
     fontFamily = when (role) {
-      CaptionRole.Emphasis -> FontFamily.Cursive
-      CaptionRole.Soft -> FontFamily.Serif
-      CaptionRole.Normal -> FontFamily.Serif
+      CaptionRole.Emphasis -> cinematicHandwrittenFontFamily
+      CaptionRole.Soft -> cinematicSupportingFontFamily
+      CaptionRole.Normal -> cinematicSupportingFontFamily
     },
     fontSize = fontSize,
     fontWeight = when (role) {
-      CaptionRole.Emphasis -> FontWeight.Medium
+      CaptionRole.Emphasis -> FontWeight.Normal
       CaptionRole.Soft -> FontWeight.Normal
       CaptionRole.Normal -> FontWeight.Normal
     },

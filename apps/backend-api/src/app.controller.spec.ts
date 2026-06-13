@@ -215,6 +215,16 @@ describe('AppController', () => {
               versionCode: 7,
               versionName: '1.0.2',
             }),
+            versions: [
+              expect.objectContaining({
+                fileExists: true,
+                fileName: 'wangri-tv-1.0.2.apk',
+                forceUpdate: true,
+                isLatest: true,
+                versionCode: 7,
+                versionName: '1.0.2',
+              }),
+            ],
           }),
         });
         expect(existsSync(join(releaseDir, 'wangri-tv-1.0.2.apk'))).toBe(true);
@@ -222,6 +232,14 @@ describe('AppController', () => {
           JSON.parse(readFileSync(join(releaseDir, 'latest.json'), 'utf8')),
         ).toMatchObject({
           apkUrl: '/releases/wangri-tv-1.0.2.apk',
+          versionCode: 7,
+          versionName: '1.0.2',
+        });
+        expect(
+          JSON.parse(readFileSync(join(releaseDir, 'wangri-tv-1.0.2.json'), 'utf8')),
+        ).toMatchObject({
+          apkUrl: '/releases/wangri-tv-1.0.2.apk',
+          forceUpdate: true,
           versionCode: 7,
           versionName: '1.0.2',
         });
@@ -237,6 +255,68 @@ describe('AppController', () => {
       } finally {
         restoreEnv('WRJDYK_RELEASES_DIR', previousReleaseDir);
         restoreEnv('WRJDYK_BACKEND_PUBLIC_PORT', previousPublicPort);
+        rmSync(releaseDir, { force: true, recursive: true });
+      }
+    });
+
+    it('lists uploaded TV APK releases with force-update state', () => {
+      const previousReleaseDir = process.env.WRJDYK_RELEASES_DIR;
+      const releaseDir = join(testDataDir, 'release-list');
+      mkdirSync(releaseDir, { recursive: true });
+      process.env.WRJDYK_RELEASES_DIR = releaseDir;
+
+      try {
+        appController.uploadAdminTvReleasePackage(
+          {
+            forceUpdate: 'false',
+            releaseNotes: 'Stable release',
+            versionCode: '7',
+            versionName: '1.0.2',
+          },
+          {
+            buffer: Buffer.from('apk-v102'),
+            originalname: 'app-release.apk',
+            size: 8,
+          },
+        );
+        appController.uploadAdminTvReleasePackage(
+          {
+            forceUpdate: 'true',
+            releaseNotes: 'Force Android 9 upgrade',
+            versionCode: '8',
+            versionName: '1.0.3',
+          },
+          {
+            buffer: Buffer.from('apk-v103'),
+            originalname: 'app-release.apk',
+            size: 8,
+          },
+        );
+
+        const releaseInfo = appController.getAdminTvReleaseInfo().data;
+
+        expect(releaseInfo.versions.map((version) => version.fileName)).toEqual([
+          'wangri-tv-1.0.3.apk',
+          'wangri-tv-1.0.2.apk',
+        ]);
+        expect(releaseInfo.versions).toEqual([
+          expect.objectContaining({
+            forceUpdate: true,
+            isLatest: true,
+            releaseNotes: 'Force Android 9 upgrade',
+            versionCode: 8,
+            versionName: '1.0.3',
+          }),
+          expect.objectContaining({
+            forceUpdate: false,
+            isLatest: false,
+            releaseNotes: 'Stable release',
+            versionCode: 7,
+            versionName: '1.0.2',
+          }),
+        ]);
+      } finally {
+        restoreEnv('WRJDYK_RELEASES_DIR', previousReleaseDir);
         rmSync(releaseDir, { force: true, recursive: true });
       }
     });
@@ -383,7 +463,7 @@ describe('AppController', () => {
         data: expect.objectContaining({
           albumCount: 3,
           databasePath: expect.stringContaining('.sqlite'),
-          migrationVersion: 16,
+          migrationVersion: 18,
           photoCount: 9,
           photoRoot: expect.stringContaining('ceshi'),
         }),
@@ -1656,6 +1736,80 @@ describe('AppController', () => {
       expect(prompt).toContain('classification');
       expect(prompt).toContain('narration');
       expect(prompt).toContain('tv_layout');
+    });
+
+    it('requires evidence-based top metadata fields in the strict Vision contract', () => {
+      const prompt = buildUnifiedVisionSystemPrompt({
+        aiCheckIntervalMinutes: 60,
+        apiKey: 'test-key',
+        apiKeyConfigured: true,
+        baseUrl: 'https://example.test/v1',
+        classificationPrompt: '',
+        commentPrompt: '',
+        dailyAiLimit: 100,
+        layoutPrompt: '',
+        model: 'gpt-test',
+        outputContractPrompt: '',
+        provider: 'openai_compatible',
+        scoringPrompt: '业务提示词',
+        updatedAt: '2026-06-11T00:00:00.000Z',
+      });
+
+      expect(prompt).toContain('photo_analysis.observed_meta');
+      expect(prompt).toContain('time');
+      expect(prompt).toContain('location');
+      expect(prompt).toContain('weather');
+      expect(prompt).toContain('没有明确证据时必须返回空字符串');
+    });
+
+    it('projects evidence-based observed metadata from the strict Vision payload', () => {
+      const insight = normalizeUnifiedVisionResult({
+        schema_version: 'photo_tv_payload_v1',
+        classification: {
+          category: '旅行',
+          scene_tags: ['旅行', '草原', '风景'],
+          tv_suitability: 'high',
+        },
+        photo_analysis: {
+          caption: '草原上有牛群和远处裂开的土地。',
+          observed_meta: {
+            evidence: {
+              location: '画面里有草原腹地的文字牌',
+              time: '画面中钟表显示 14:36',
+              weather: '天空晴朗且阳光直射',
+            },
+            location: '草原腹地',
+            time: '14:36',
+            weather: 'Sunny / Clear',
+          },
+        },
+        scores: {
+          beauty_score: 88,
+          is_trash: false,
+          memory_score: 90,
+          reason: '构图清晰，适合电视播放。',
+        },
+        narration_options: [
+          { closing_line: '万物都慢下来', handwritten_line: '风轻轻掠过', scene_line: '草原牛群远山' },
+          { closing_line: '绿色铺满记忆', handwritten_line: '草色一直到天边', scene_line: '草坡阳光清亮' },
+          { closing_line: '远处也有回声', handwritten_line: '慢下来就听见风', scene_line: '牛站在草地上' },
+          { closing_line: '土地安静开合', handwritten_line: '裂缝让画面真实', scene_line: '草地出现裂缝' },
+          { closing_line: '晴天留在眼前', handwritten_line: '阳光落在草原', scene_line: '天空清透明亮' },
+        ],
+        selected_narration_index: 0,
+        layout_plan: {
+          font_style: 'handwriting',
+          position: 'bottom_left',
+          safe_area: { h: 0.2, w: 0.4, x: 0.08, y: 0.7 },
+          text_color: '#FFFFFF',
+        },
+      });
+
+      expect(insight.aiObservedMeta).toEqual({
+        location: '草原腹地',
+        time: '14:36',
+        weather: 'Sunny / Clear',
+      });
     });
 
     it('appends the standard output contract after the business prompt as the final override', () => {

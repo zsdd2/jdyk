@@ -114,10 +114,22 @@ export interface PlaylistDisplayConfig {
   tvImageUrl?: string;
 }
 
+export interface PlaylistMediaInfo {
+  height: number;
+  orientation: 'landscape' | 'portrait' | 'square' | 'unknown';
+  width: number;
+}
+
 export interface PlaylistNarrationVariant {
   handwrittenThought: string;
   lyricalClosure: string;
   sceneDescription: string;
+}
+
+export interface PlaylistTopMeta {
+  location?: string;
+  time?: string;
+  weather?: string;
 }
 
 export interface PlaylistItem {
@@ -136,11 +148,13 @@ export interface PlaylistItem {
   layout: PlaylistLayout;
   layoutTemplateId: string;
   location?: string;
+  media?: PlaylistMediaInfo;
   narrationVariants?: PlaylistNarrationVariant[];
   performanceHint: PerformanceHint;
   photoId: string;
   takenAt?: string;
   thumbnailUrl: string;
+  topMeta?: PlaylistTopMeta;
 }
 
 export interface PlaylistResponse {

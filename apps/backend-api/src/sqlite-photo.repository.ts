@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, readdirSync, statSync } from 'fs';
+import { existsSync, mkdirSync, readdirSync, readFileSync, statSync } from 'fs';
 import { basename, dirname, join, relative, resolve } from 'path';
 import { DatabaseSync } from 'node:sqlite';
 import type {
@@ -295,6 +295,11 @@ export interface PhotoAiInsightInput {
   aiLayoutPosition?: 'bottom_left' | 'bottom_right' | 'center_safe' | 'top_left' | 'top_right';
   aiMemoryScore?: number;
   aiNarrationVariants?: PlaylistNarrationVariant[];
+  aiObservedMeta?: {
+    location: string;
+    time: string;
+    weather: string;
+  };
   aiReason?: string;
   aiRecognizedAt?: string;
   aiSafeArea?: {
@@ -453,8 +458,10 @@ interface PhotoRow {
   position: number;
   source_album_id: string;
   source_album_kind: PhotoCenterSourceAlbumKind;
+  source_height: number;
   source_owner_name: string;
   source_type: PhotoCenterSourceType;
+  source_width: number;
   synced_at: string;
   taken_at: string;
   thumbnail_300_url: string;
@@ -562,16 +569,16 @@ interface TvDeviceRow {
   updated_at: string;
 }
 
-const currentSchemaVersion = 16;
+const currentSchemaVersion = 18;
 
-const defaultBusinessVisionPrompt = [
+const fallbackBusinessVisionPrompt = [
   '按家庭记忆价值、人物情绪、清晰度、构图光影和电视大屏可观看性综合评分。账单、截图、模糊测试图、纯黑纯白图直接低分或标记废片；人物自然、家庭事件、开心瞬间、特殊场景应提高 memory_score。',
   '为家庭电视播放写 2-3 行温暖、克制、有停顿感的中文旁白，总字数 10-25 字。文字像家人轻声回忆，不像广告标题；避免照片文件名、相册名和夸张形容。',
   '识别照片中的主要类型和氛围，返回 3-6 个适合家庭影像分拣和推送优先级的中文标签。优先使用人物、开心、场景、旅行、聚会、纪念日、亲子、合影、美食、宠物、旧照片、生活瞬间。',
   '分析 16:9 电视画布中的安全文字区。文字必须避开人脸、人物主体和高信息区域；优先落在留白、暗部、背景简单区域或可加渐变遮罩区域。输出 position、safe_area、text_color、font_style。',
 ].join('\n\n');
 
-const defaultOutputContractPrompt = [
+const fallbackOutputContractPrompt = [
   '最终只能输出一个可被 JSON.parse 直接解析的 JSON 对象；不要 Markdown、代码块、Python、工具调用、search(...)、Result、过程说明或额外文字。',
   '必须返回 schema_version: "photo_tv_payload_v1"。',
   '必须包含 photo_analysis.caption、classification、scores、narration_options、selected_narration_index、layout_plan。',
@@ -581,6 +588,15 @@ const defaultOutputContractPrompt = [
   'narration_options 必须返回 5 组不同的三段式旁白，每组包含 scene_line、handwritten_line、closing_line；selected_narration_index 为 0-4 的整数。',
   'layout_plan 必须包含 position、safe_area、text_color、font_style；safe_area 使用 0-1 归一化 {x,y,w,h}，text_color 只能是 #FFFFFF 或 #000000，font_style 只能是 handwriting、sans-serif、serif。',
 ].join('\n');
+
+const defaultBusinessVisionPrompt = readDefaultPromptFile(
+  '业务 Vision 提示词.md',
+  fallbackBusinessVisionPrompt,
+);
+const defaultOutputContractPrompt = readDefaultPromptFile(
+  '标准输出字段要求.md',
+  fallbackOutputContractPrompt,
+);
 
 const defaultAiSettings = {
   aiCheckIntervalMinutes: 60,
@@ -594,6 +610,19 @@ const defaultAiSettings = {
   provider: 'openai_compatible' satisfies AiSettingsProvider,
   scoringPrompt: defaultBusinessVisionPrompt,
 };
+
+function readDefaultPromptFile(fileName: string, fallback: string): string {
+  const candidates = [
+    resolve(process.cwd(), 'prompts', fileName),
+    resolve(process.cwd(), 'apps', 'backend-api', 'prompts', fileName),
+  ];
+  for (const filePath of candidates) {
+    if (!existsSync(filePath)) continue;
+    const content = readFileSync(filePath, 'utf8').trim();
+    if (content) return content;
+  }
+  return fallback;
+}
 
 const realPhotoFiles = [
   '_DSC6456.jpg',
@@ -895,6 +924,8 @@ export class SqlitePhotoRepository {
           p.caption_text,
           p.caption_style,
           p.source_type,
+          p.source_width,
+          p.source_height,
           p.source_album_id,
           p.import_album_title,
           p.ai_score,
@@ -1470,6 +1501,8 @@ export class SqlitePhotoRepository {
             photo_id,
             filename,
             source_type,
+            source_width,
+            source_height,
             COALESCE(NULLIF(thumbnail_300_url, ''), NULLIF(thumbnail_url, ''), photo_url(photo_id, 'thumb')) AS thumbnail_300_url,
             COALESCE(NULLIF(ai_720_url, ''), NULLIF(display_image_url, ''), photo_url(photo_id, 'display')) AS ai_720_url,
             COALESCE(NULLIF(tv_4k_webp_url, ''), NULLIF(display_image_url, ''), photo_url(photo_id, 'display')) AS tv_4k_webp_url
@@ -1481,6 +1514,8 @@ export class SqlitePhotoRepository {
         filename: string;
         photo_id: string;
         source_type: PhotoCenterSourceType;
+        source_height: number;
+        source_width: number;
         ai_720_url: string;
         thumbnail_300_url: string;
         tv_4k_webp_url: string;
@@ -1489,6 +1524,23 @@ export class SqlitePhotoRepository {
 
     const sourceInput = source?.buffer ?? source?.path;
     const localSourcePath = join(this.photoRoot, row.filename);
+    const mediaSource = sourceInput ?? (existsSync(localSourcePath) ? localSourcePath : undefined);
+    if (mediaSource && (row.source_width <= 0 || row.source_height <= 0)) {
+      const dimensions = await readSourceMediaDimensions(mediaSource);
+      if (dimensions) {
+        this.getDatabase()
+          .prepare(
+            `
+              UPDATE photos
+              SET source_width = ?, source_height = ?
+              WHERE photo_id = ?
+            `,
+          )
+          .run(dimensions.width, dimensions.height, normalizedPhotoId);
+        row.source_width = dimensions.width;
+        row.source_height = dimensions.height;
+      }
+    }
     const outputDir = join(this.derivativeRoot, normalizedPhotoId);
     const thumbPath = join(outputDir, 'thumb_300.webp');
     const aiPath = join(outputDir, 'ai_720.webp');
@@ -2327,6 +2379,8 @@ export class SqlitePhotoRepository {
             p.caption_text,
             p.caption_style,
             p.source_type,
+            p.source_width,
+            p.source_height,
             p.source_album_id,
             p.import_album_title,
             p.ai_score,
@@ -3398,6 +3452,33 @@ export class SqlitePhotoRepository {
           .prepare('INSERT INTO schema_migrations (version, name) VALUES (?, ?)')
           .run(16, 'feiniu_settings');
       }
+      if (row.version < 17) {
+        addColumnIfMissing(database, 'photos', 'source_width', 'INTEGER NOT NULL DEFAULT 0');
+        addColumnIfMissing(database, 'photos', 'source_height', 'INTEGER NOT NULL DEFAULT 0');
+        database
+          .prepare('INSERT INTO schema_migrations (version, name) VALUES (?, ?)')
+          .run(17, 'photo_media_dimensions');
+      }
+      if (row.version < 18) {
+        database
+          .prepare(
+            `
+              UPDATE ai_settings
+              SET scoring_prompt = ?,
+                  output_contract_prompt = ?,
+                  updated_at = ?
+              WHERE id = 1
+            `,
+          )
+          .run(
+            defaultAiSettings.scoringPrompt,
+            defaultAiSettings.outputContractPrompt,
+            new Date().toISOString(),
+          );
+        database
+          .prepare('INSERT INTO schema_migrations (version, name) VALUES (?, ?)')
+          .run(18, 'refresh_bundled_ai_prompts');
+      }
       database.exec('COMMIT');
     } catch (error) {
       database.exec('ROLLBACK');
@@ -3591,6 +3672,7 @@ function rowToPlaylistItem(row: PhotoRow): PlaylistItem {
   const layoutTemplateId = 'bottom_gradient';
   const aiComment = row.ai_comment.trim();
   const aiDetailProjection = extractAiDetailProjection(row.ai_detail);
+  const topMeta = buildPlaylistTopMeta(row, aiDetailProjection);
 
   return {
     ai: {
@@ -3642,11 +3724,17 @@ function rowToPlaylistItem(row: PhotoRow): PlaylistItem {
     },
     layoutTemplateId,
     location: row.location,
+    media: {
+      height: row.source_height,
+      orientation: mediaOrientation(row.source_width, row.source_height),
+      width: row.source_width,
+    },
     narrationVariants: aiDetailProjection?.aiNarrationVariants ?? [],
     performanceHint: 'standard',
     photoId: row.photo_id,
     takenAt: row.taken_at,
     thumbnailUrl: row.thumbnail_url,
+    topMeta,
   };
 }
 
@@ -3780,6 +3868,11 @@ interface AiDetailProjection {
   aiComment?: string;
   aiMemoryScore?: number;
   aiNarrationVariants?: PlaylistNarrationVariant[];
+  aiObservedMeta?: {
+    location: string;
+    time: string;
+    weather: string;
+  };
   aiReason?: string;
   aiScore?: number;
   aiTags?: string[];
@@ -3814,6 +3907,7 @@ function extractAiDetailProjection(value: string): AiDetailProjection | null {
   );
   const comment = extractAiDetailComment(raw, analysis);
   const narrationVariants = extractAiNarrationVariants(raw);
+  const observedMeta = extractAiObservedMeta(raw);
   const tags = extractAiDetailTags(raw, analysis, classification);
   const reason = [
     raw.reason,
@@ -3827,12 +3921,24 @@ function extractAiDetailProjection(value: string): AiDetailProjection | null {
   if (comment) projection.aiComment = comment;
   if (memoryScore !== undefined) projection.aiMemoryScore = memoryScore;
   if (narrationVariants.length > 0) projection.aiNarrationVariants = narrationVariants;
+  if (observedMeta) projection.aiObservedMeta = observedMeta;
   if (memoryScore !== undefined && beautyScore !== undefined) {
     projection.aiScore = Math.round((memoryScore * 0.65) + (beautyScore * 0.35));
   }
   if (typeof reason === 'string') projection.aiReason = reason.trim().slice(0, 120);
   if (tags.length > 0) projection.aiTags = tags;
   return Object.keys(projection).length > 0 ? projection : null;
+}
+
+function buildPlaylistTopMeta(
+  row: PhotoRow,
+  projection: AiDetailProjection | null,
+): NonNullable<PlaylistItem['topMeta']> {
+  return {
+    location: row.location || projection?.aiObservedMeta?.location || '',
+    time: row.taken_at || projection?.aiObservedMeta?.time || '',
+    weather: projection?.aiObservedMeta?.weather || '',
+  };
 }
 
 function extractAiNarrationVariants(
@@ -3873,6 +3979,19 @@ function extractAiNarrationVariants(
         candidate.lyricalClosure,
     )
     .slice(0, 5);
+}
+
+function extractAiObservedMeta(
+  raw: Record<string, unknown>,
+): AiDetailProjection['aiObservedMeta'] | undefined {
+  const photoAnalysis = asRecord(raw.photo_analysis);
+  const observedMeta = asRecord(photoAnalysis?.observed_meta);
+  if (!observedMeta) return undefined;
+  const location = typeof observedMeta.location === 'string' ? observedMeta.location.trim() : '';
+  const time = typeof observedMeta.time === 'string' ? observedMeta.time.trim() : '';
+  const weather = typeof observedMeta.weather === 'string' ? observedMeta.weather.trim() : '';
+  if (!location && !time && !weather) return undefined;
+  return { location, time, weather };
 }
 
 function normalizeNarrationPart(value: unknown): string {
@@ -4161,6 +4280,28 @@ function withDerivativeProfile(url: string, profile: 'ai_720' | 'thumb_300' | 't
   if (!trimmedUrl) return trimmedUrl;
   if (/[?&]profile=/.test(trimmedUrl)) return trimmedUrl;
   return `${trimmedUrl}${trimmedUrl.includes('?') ? '&' : '?'}profile=${profile}`;
+}
+
+async function readSourceMediaDimensions(
+  source: Buffer | string,
+): Promise<{ height: number; width: number } | null> {
+  const metadata = await sharp(source).metadata();
+  const rawWidth = metadata.width ?? 0;
+  const rawHeight = metadata.height ?? 0;
+  if (rawWidth <= 0 || rawHeight <= 0) return null;
+  const rotated = [5, 6, 7, 8].includes(metadata.orientation ?? 0);
+  return rotated
+    ? { height: rawWidth, width: rawHeight }
+    : { height: rawHeight, width: rawWidth };
+}
+
+function mediaOrientation(
+  width: number,
+  height: number,
+): NonNullable<PlaylistItem['media']>['orientation'] {
+  if (width <= 0 || height <= 0) return 'unknown';
+  if (width === height) return 'square';
+  return height > width ? 'portrait' : 'landscape';
 }
 
 async function ensureWebpDerivative(
