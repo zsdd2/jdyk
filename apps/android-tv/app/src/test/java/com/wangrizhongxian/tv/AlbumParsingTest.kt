@@ -205,7 +205,7 @@ class AlbumParsingTest {
     assertEquals(1080, item.mediaWidth)
     assertEquals(1920, item.mediaHeight)
     assertEquals("portrait", item.mediaOrientation)
-    assertEquals("14:36 · 草原腹地 · Sunny / Clear", item.topMetaLine)
+    assertEquals("14:36 / 草原腹地 / Sunny / Clear", item.topMetaLine)
     assertEquals(true, item.isPortrait)
   }
 

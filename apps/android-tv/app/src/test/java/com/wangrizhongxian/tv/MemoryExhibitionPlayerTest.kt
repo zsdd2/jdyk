@@ -6,6 +6,7 @@ import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.layout.ContentScale
 
 class MemoryExhibitionPlayerTest {
   @Test
@@ -53,14 +54,31 @@ class MemoryExhibitionPlayerTest {
   }
 
   @Test
-  fun portraitSideCaptionSpecsKeepTextOutsidePortraitPhotoFrame() {
-    val frame = portraitSidePhotoFrame()
-    val lines = portraitSideCaptionDesignLines()
+  fun portraitPhotoRightLayoutMatchesApproved4kDesign() {
+    val frame = portraitPhotoRightFrame()
+    val lines = portraitPhotoRightCaptionDesignLines()
+    val meta = portraitPhotoRightMetaSpec()
 
-    lines.forEach { line ->
-      assertTrue(line.left > frame.left + frame.width)
-      assertTrue(line.left + line.width <= 3400)
-    }
+    assertEquals(2341, frame.left)
+    assertEquals(1215, frame.width)
+    assertEquals(1171f, lines.first().left + lines.first().width / 2f, 1f)
+    assertEquals(1030, lines.first().top)
+    assertEquals(130, meta.top)
+    assertEquals(3, lines.size)
+  }
+
+  @Test
+  fun portraitPhotoLeftLayoutMatchesApproved4kDesign() {
+    val frame = portraitPhotoLeftFrame()
+    val lines = portraitPhotoLeftCaptionDesignLines()
+    val meta = portraitPhotoLeftMetaSpec()
+
+    assertEquals(284, frame.left)
+    assertEquals(1215, frame.width)
+    assertEquals(2669f, lines.first().left + lines.first().width / 2f, 1f)
+    assertEquals(1030, lines.first().top)
+    assertEquals(130, meta.top)
+    assertEquals(3, lines.size)
   }
 
   @Test
@@ -69,7 +87,14 @@ class MemoryExhibitionPlayerTest {
       .map { portraitLayoutVariantFor("portrait-photo-$it") }
       .toSet()
 
-    assertEquals(setOf(PortraitLayoutVariant.Overlay, PortraitLayoutVariant.Side), variants)
+    assertEquals(
+      setOf(
+        PortraitLayoutVariant.Center,
+        PortraitLayoutVariant.PhotoRight,
+        PortraitLayoutVariant.PhotoLeft,
+      ),
+      variants,
+    )
     assertEquals(
       portraitLayoutVariantFor("stable-photo"),
       portraitLayoutVariantFor("stable-photo"),
@@ -86,6 +111,145 @@ class MemoryExhibitionPlayerTest {
 
     assertTrue(fittedSize < titleSpec.fontSize)
     assertTrue(fittedWidth <= titleSpec.width)
+  }
+
+  @Test
+  fun cinematicEmphasisLinesNeverCreateAThirdLine() {
+    val title = "一二三四五六七八九十甲乙丙丁戊己庚辛壬癸"
+
+    val lines = cinematicEmphasisLines(title)
+
+    assertEquals(2, lines.size)
+    assertEquals(title, lines.joinToString(""))
+    assertTrue(kotlin.math.abs(lines[0].length - lines[1].length) <= 1)
+  }
+
+  @Test
+  fun cinematicEmphasisLinesWrapAtEightCharactersUntilSixteen() {
+    val lines = cinematicEmphasisLines("一二三四五六七八九十甲乙")
+
+    assertEquals(listOf("一二三四五六七八", "九十甲乙"), lines)
+  }
+
+  @Test
+  fun cinematicCaptionFitKeepsBothLongTitleLinesInsideAvailableWidth() {
+    val spec = portraitPhotoRightCaptionDesignLines()[1]
+    val lines = cinematicEmphasisLines("你在湖边举灯看向远方的微光与山海也看见归途灯火")
+
+    val fit = cinematicCaptionFit(lines, spec, CaptionRole.Emphasis)
+
+    assertTrue(fit.fontSize < spec.fontSize)
+    lines.forEach { line ->
+      assertTrue(
+        cinematicCaptionEstimatedTextWidth(
+          line,
+          fit.fontSize,
+          fit.letterSpacing,
+          CaptionRole.Emphasis,
+        ) <= spec.width,
+      )
+    }
+  }
+
+  @Test
+  fun selectedNarrationVariantMatchesTheAiCommentInsteadOfTheFirstOption() {
+    val first = TvNarrationVariant("第一条中段", "第一条结尾", "第一条开头")
+    val selected = TvNarrationVariant("第二条中段", "第二条结尾", "第二条开头")
+    val item = playlistItem(
+      aiComment = "第二条开头\n第二条中段\n第二条结尾",
+      narrationVariants = listOf(first, selected),
+    )
+
+    assertEquals(selected, item.selectedNarrationVariant())
+  }
+
+  @Test
+  fun selectedNarrationVariantUsesCustomThreeLineAiComment() {
+    val item = playlistItem(aiComment = "自定义开头\n自定义中段\n自定义结尾")
+
+    assertEquals(
+      TvNarrationVariant("自定义中段", "自定义结尾", "自定义开头"),
+      item.selectedNarrationVariant(),
+    )
+  }
+
+  @Test
+  fun topMetaUsesSlashSeparators() {
+    val item = playlistItem(
+      topMetaLocation = "草原腹地",
+      topMetaTime = "14:36",
+      topMetaWeather = "晴朗",
+    )
+
+    assertEquals("14:36 / 草原腹地 / 晴朗", item.topMetaLine)
+  }
+
+  @Test
+  fun topMetaDoesNotReplaceTheFirstNarrationLine() {
+    val item = playlistItem(topMetaTime = "2025-08-31")
+    val variant = TvNarrationVariant("中段旁白", "结尾旁白", "第一段旁白")
+
+    assertEquals(
+      listOf("第一段旁白", "中段旁白", "结尾旁白"),
+      item.cinematicNarrationLines(variant),
+    )
+  }
+
+  @Test
+  fun unknownPlaylistOrientationFallsBackToLoadedImageDimensions() {
+    val item = playlistItem(
+      mediaHeight = 0,
+      mediaOrientation = "unknown",
+      mediaWidth = 0,
+    )
+
+    assertEquals(null, item.declaredIsPortrait)
+    assertTrue(item.resolveIsPortrait(loadedWidth = 1080, loadedHeight = 1920))
+    assertEquals(false, item.resolveIsPortrait(loadedWidth = 1920, loadedHeight = 1080))
+  }
+
+  @Test
+  fun landscapeEmphasisStaysOnOneLineAndShrinksToFit() {
+    val spec = cinematicCaptionDesignLines()[1]
+    val text = "横版中间文案不受八个字换行限制并且始终完整显示"
+    val lines = cinematicDisplayLines(text, CaptionRole.Emphasis, wrapEmphasis = false)
+    val fit = cinematicCaptionFit(lines, spec, CaptionRole.Emphasis)
+
+    assertEquals(listOf(text), lines)
+    assertTrue(
+      cinematicCaptionEstimatedTextWidth(
+        text,
+        fit.fontSize,
+        fit.letterSpacing,
+        CaptionRole.Emphasis,
+      ) <= spec.width,
+    )
+  }
+
+  @Test
+  fun landscapePhotosFillTheScreenWhileCenteredPortraitKeepsFit() {
+    assertEquals(ContentScale.Crop, foregroundContentScale(portraitVariant = null))
+    assertEquals(ContentScale.Fit, foregroundContentScale(PortraitLayoutVariant.Center))
+    assertEquals(ContentScale.Crop, foregroundContentScale(PortraitLayoutVariant.PhotoRight))
+    assertEquals(ContentScale.Crop, foregroundContentScale(PortraitLayoutVariant.PhotoLeft))
+  }
+
+  @Test
+  fun handwrittenWidthEstimateLeavesRoomForRealFontGlyphs() {
+    val spec = portraitOverlayCaptionDesignLines()[1]
+    val text = "适合在电视上慢慢重温"
+
+    val fit = cinematicCaptionFit(listOf(text), spec, CaptionRole.Emphasis)
+
+    assertTrue(fit.fontSize <= 100)
+    assertTrue(
+      cinematicCaptionEstimatedTextWidth(
+        text,
+        fit.fontSize,
+        fit.letterSpacing,
+        CaptionRole.Emphasis,
+      ) <= spec.width * 0.9f,
+    )
   }
 
   @Test
@@ -187,6 +351,13 @@ class MemoryExhibitionPlayerTest {
     aiComment: String = "",
     captionText: String = "",
     captionTitle: String = "",
+    mediaHeight: Int = 0,
+    mediaOrientation: String = "unknown",
+    mediaWidth: Int = 0,
+    narrationVariants: List<TvNarrationVariant> = emptyList(),
+    topMetaLocation: String = "",
+    topMetaTime: String = "",
+    topMetaWeather: String = "",
   ): TvPlaylistItem {
     return TvPlaylistItem(
       aiComment = aiComment,
@@ -210,17 +381,17 @@ class MemoryExhibitionPlayerTest {
       layoutTemplateId = "bottom_gradient",
       layoutPosition = "right_bottom",
       location = "",
-      mediaHeight = 0,
-      mediaOrientation = "unknown",
-      mediaWidth = 0,
-      narrationVariants = emptyList(),
+      mediaHeight = mediaHeight,
+      mediaOrientation = mediaOrientation,
+      mediaWidth = mediaWidth,
+      narrationVariants = narrationVariants,
       photoId = "photo",
       safeArea = TvSafeArea(x = 0.58f, y = 0.70f, w = 0.34f, h = 0.18f),
       takenAt = "",
       textColor = "#000000",
-      topMetaLocation = "",
-      topMetaTime = "",
-      topMetaWeather = "",
+      topMetaLocation = topMetaLocation,
+      topMetaTime = topMetaTime,
+      topMetaWeather = topMetaWeather,
     )
   }
 

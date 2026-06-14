@@ -2750,10 +2750,19 @@ data class TvPlaylistItem(
   val topMetaLine: String
     get() = listOf(topMetaTime, topMetaLocation, topMetaWeather)
       .filter { it.isNotBlank() }
-      .joinToString(" · ")
+      .joinToString(" / ")
+  val declaredIsPortrait: Boolean?
+    get() = when {
+      mediaOrientation.equals("portrait", ignoreCase = true) -> true
+      mediaOrientation.equals("landscape", ignoreCase = true) -> false
+      mediaWidth > 0 && mediaHeight > 0 -> mediaHeight > mediaWidth
+      else -> null
+    }
   val isPortrait: Boolean
-    get() = mediaOrientation.equals("portrait", ignoreCase = true) ||
-      (mediaWidth > 0 && mediaHeight > mediaWidth)
+    get() = declaredIsPortrait == true
+
+  fun resolveIsPortrait(loadedWidth: Int, loadedHeight: Int): Boolean =
+    declaredIsPortrait ?: (loadedWidth > 0 && loadedHeight > loadedWidth)
 }
 
 data class TvSafeArea(
