@@ -102,6 +102,19 @@ class MemoryExhibitionPlayerTest {
   }
 
   @Test
+  fun portraitLayoutsRefreshWhenAPlaybackSessionRestarts() {
+    val photoIds = (1..30).map { "portrait-photo-$it" }
+    val firstSession = photoIds.map { portraitLayoutVariantFor(it, sessionSeed = 101) }
+    val repeatedFirstSession = photoIds.map { portraitLayoutVariantFor(it, sessionSeed = 101) }
+    val secondSession = photoIds.map { portraitLayoutVariantFor(it, sessionSeed = 102) }
+
+    assertEquals(firstSession, repeatedFirstSession)
+    assertNotEquals(firstSession, secondSession)
+    assertEquals(PortraitLayoutVariant.entries.toSet(), firstSession.toSet())
+    assertEquals(PortraitLayoutVariant.entries.toSet(), secondSession.toSet())
+  }
+
+  @Test
   fun cinematicCaptionFittedFontSizeKeepsLongHandwrittenTitleOnOneLine() {
     val titleSpec = cinematicCaptionDesignLines()[1]
     val longTitle = "你在湖边举灯看向远方的微光与山海"

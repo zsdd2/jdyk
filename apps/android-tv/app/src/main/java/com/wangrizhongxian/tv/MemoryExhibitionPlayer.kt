@@ -77,6 +77,7 @@ fun MemoryExhibitionPlayer(
   item: TvPlaylistItem,
   itemCount: Int,
   nextItem: TvPlaylistItem?,
+  playbackSessionSeed: Int,
   onAutoNext: () -> Unit,
   onBack: () -> Unit,
   onNext: () -> Unit,
@@ -113,7 +114,11 @@ fun MemoryExhibitionPlayer(
     )
   val narrationVariant = item.selectedNarrationVariant()
   val isPortrait = item.resolveIsPortrait(loadedImageWidth, loadedImageHeight)
-  val portraitVariant = if (isPortrait) portraitLayoutVariantFor(item.photoId) else null
+  val portraitVariant = if (isPortrait) {
+    portraitLayoutVariantFor(item.photoId, playbackSessionSeed)
+  } else {
+    null
+  }
 
   LaunchedEffect(item.photoId, item.durationMs) {
     motionProgress.snapTo(0f)
@@ -665,9 +670,10 @@ private fun cinematicCaptionDesignLines(
   }
 }
 
-internal fun portraitLayoutVariantFor(photoId: String): PortraitLayoutVariant {
+internal fun portraitLayoutVariantFor(photoId: String, sessionSeed: Int = 0): PortraitLayoutVariant {
   val variants = PortraitLayoutVariant.entries
-  return variants[photoId.hashCode().ushr(1) % variants.size]
+  val mixedHash = photoId.hashCode() xor (sessionSeed * -0x61c88647)
+  return variants[Math.floorMod(mixedHash, variants.size)]
 }
 
 internal fun cinematicCaptionDesignLines(): List<CinematicCaptionLineSpec> {

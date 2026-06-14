@@ -179,6 +179,7 @@ private fun TvMemoryApp() {
   var selectedAlbumIndex by remember { mutableIntStateOf(0) }
   var selectedQueueIndex by remember { mutableIntStateOf(0) }
   var currentItemIndex by remember { mutableIntStateOf(0) }
+  var playbackSessionSeed by remember { mutableIntStateOf(0) }
   var settingsIndex by remember { mutableIntStateOf(0) }
   var scanProgress by remember { mutableIntStateOf(0) }
   var playbackStatusText by remember { mutableStateOf("") }
@@ -440,6 +441,7 @@ private fun TvMemoryApp() {
 
     if (album.items.isNotEmpty()) {
       playbackStatusText = "Playing: ${album.title}"
+      playbackSessionSeed = playbackSessionSeed.nextPlaybackSessionSeed()
       screen = TvAppScreen.Player
       reportCurrentPlayback(album.items.first())
       return
@@ -463,6 +465,7 @@ private fun TvMemoryApp() {
         screen = TvAppScreen.EmptyPlaylist
       } else {
         playbackStatusText = "Playing: ${detailResult.album.title}"
+        playbackSessionSeed = playbackSessionSeed.nextPlaybackSessionSeed()
         screen = TvAppScreen.Player
         reportCurrentPlayback(detailResult.album.items.first())
       }
@@ -479,6 +482,7 @@ private fun TvMemoryApp() {
     currentItemIndex = 0
     selectedQueueIndex = 0
     playbackStatusText = "Playing: ${album.title}"
+    playbackSessionSeed = playbackSessionSeed.nextPlaybackSessionSeed()
     screen = TvAppScreen.Player
     reportCurrentPlayback(album.items.first())
   }
@@ -586,6 +590,7 @@ private fun TvMemoryApp() {
           screen = TvAppScreen.Settings
         },
         onPrevious = ::showPreviousItem,
+        playbackSessionSeed = playbackSessionSeed,
         playbackStatusText = playbackStatusText,
       )
     } ?: TvEmptyAlbumScreen(
@@ -1301,6 +1306,7 @@ private fun TvPhotoPlayerScreen(
   onOpenQueue: () -> Unit,
   onOpenSettings: () -> Unit,
   onPrevious: () -> Unit,
+  playbackSessionSeed: Int,
   playbackStatusText: String,
 ) {
   return MemoryExhibitionPlayer(
@@ -1309,6 +1315,7 @@ private fun TvPhotoPlayerScreen(
     item = item,
     itemCount = itemCount,
     nextItem = if (items.isNotEmpty()) items[(currentIndex + 1) % items.size] else null,
+    playbackSessionSeed = playbackSessionSeed,
     onAutoNext = onAutoNext,
     onBack = onBack,
     onNext = onNext,
@@ -1904,6 +1911,8 @@ private fun LoginMemoryBackdrop() {
       ),
   )
 }
+
+private fun Int.nextPlaybackSessionSeed(): Int = if (this == Int.MAX_VALUE) 1 else this + 1
 
 @Composable
 private fun AppLogoMark(size: androidx.compose.ui.unit.Dp = 170.dp) {

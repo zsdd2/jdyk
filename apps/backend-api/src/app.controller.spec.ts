@@ -16,6 +16,8 @@ import {
   AppService,
   buildUnifiedVisionSystemPrompt,
   buildUnifiedVisionUserPrompt,
+  describeVisionContractError,
+  isRetryableVisionContractError,
   normalizeStoredAiDetail,
   normalizeUnifiedVisionResult,
   parseAiJsonContent,
@@ -2524,6 +2526,33 @@ describe('AppController', () => {
       expect(playlist.items).toHaveLength(1);
       expect(playlist.items[0]?.photoId).toBe('p_001');
     });
+  });
+});
+
+describe('Vision AI contract retry', () => {
+  it('retries only parseable responses that violate the current output contract', () => {
+    expect(isRetryableVisionContractError(new Error(
+      'Invalid current AI response: missing scores, narration_options, selected_narration_index, layout_plan',
+    ))).toBe(true);
+    expect(isRetryableVisionContractError(new Error(
+      'Invalid photo_tv_payload_v1 response: missing narration_options',
+    ))).toBe(true);
+    expect(isRetryableVisionContractError(new Error('Vision AI request failed: 401'))).toBe(false);
+    expect(isRetryableVisionContractError(new Error('Vision AI request timed out'))).toBe(false);
+  });
+
+  it('reports legacy output as a likely unavailable or incompatible model', () => {
+    const message = describeVisionContractError(
+      new Error(
+        'Invalid current AI response: missing scores, narration_options, selected_narration_index, layout_plan',
+      ),
+      'gpt-4o-all',
+    );
+
+    expect(message).toContain('gpt-4o-all');
+    expect(message).toContain('旧版输出结构');
+    expect(message).toContain('模型已下线');
+    expect(message).toContain('narration_options');
   });
 });
 

@@ -13,15 +13,15 @@ test('parses Android version metadata', () => {
   });
 });
 
-test('Android TV release metadata is version 1.0.4', async () => {
+test('Android TV release metadata is version 1.0.5', async () => {
   const buildGradle = await readFile(
     resolve('apps/android-tv/app/build.gradle'),
     'utf8',
   );
 
   assert.deepEqual(parseAndroidVersion(buildGradle), {
-    versionCode: 9,
-    versionName: '1.0.4',
+    versionCode: 10,
+    versionName: '1.0.5',
   });
 });
 

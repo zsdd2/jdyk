@@ -2396,84 +2396,125 @@ class OpenAiCompatibleUnifiedVisionAiAdapter implements UnifiedVisionAiAdapter {
       throw new Error('Vision AI is not configured');
     }
 
-    const controller = new AbortController();
-    const timeout = setTimeout(() => {
-      controller.abort();
-    }, visionAiRequestTimeoutMs);
-    let response: Awaited<ReturnType<typeof fetch>>;
-
-    try {
-      response = await fetch(buildChatCompletionsUrl(input.settings.baseUrl), {
-        body: JSON.stringify({
-          max_tokens: 1_600,
-          messages: [
-            {
-              content: buildUnifiedVisionSystemPrompt(input.settings),
-              role: 'system',
-            },
-            {
-              content: [
-                {
-                  text: buildUnifiedVisionUserPrompt(input),
-                  type: 'text',
-                },
-                {
-                  image_url: {
-                    detail: 'low',
-                    url: input.derivative.aiImageUrl,
-                  },
-                  type: 'image_url',
-                },
-              ],
-              role: 'user',
-            },
-          ],
-          model: input.settings.model,
-          response_format: { type: 'json_object' },
-          temperature: 0.3,
-        }),
-        headers: {
-          Authorization: `Bearer ${input.settings.apiKey}`,
-          'Content-Type': 'application/json',
-        },
-        method: 'POST',
-        signal: controller.signal,
-      });
-    } catch (error) {
-      if (error instanceof Error && error.name === 'AbortError') {
-        throw new Error('Vision AI request timed out');
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      const content = await requestUnifiedVisionContent(input, attempt === 1);
+      const rawResult = parseAiJsonContent(content);
+      try {
+        const insight = normalizeUnifiedVisionResult(rawResult);
+        return {
+          ...insight,
+          aiDetail: JSON.stringify({
+            imageSent: input.derivative.aiImageUrl.startsWith('data:image/'),
+            imageSource: 'image_url',
+            model: input.settings.model,
+            photoId: input.item.photoId,
+            provider: input.settings.provider,
+            raw: rawResult,
+          }, null, 2),
+          aiError: '',
+          aiRecognizedAt: new Date().toISOString(),
+        };
+      } catch (error) {
+        if (attempt === 0 && isRetryableVisionContractError(error)) continue;
+        if (isRetryableVisionContractError(error)) {
+          throw new Error(describeVisionContractError(error, input.settings.model));
+        }
+        throw error;
       }
-      throw error;
-    } finally {
-      clearTimeout(timeout);
     }
-
-    if (!response.ok) {
-      throw new Error(`Vision AI request failed: ${response.status}`);
-    }
-
-    const payload = await response.json() as {
-      choices?: Array<{ message?: { content?: string } }>;
-    };
-    const content = payload.choices?.[0]?.message?.content;
-    if (!content) throw new Error('Vision AI returned empty content');
-
-    const rawResult = parseAiJsonContent(content);
-    const insight = normalizeUnifiedVisionResult(rawResult);
-    return {
-      ...insight,
-      aiDetail: JSON.stringify({
-        imageSent: input.derivative.aiImageUrl.startsWith('data:image/'),
-        imageSource: 'image_url',
-        model: input.settings.model,
-        photoId: input.item.photoId,
-        provider: input.settings.provider,
-        raw: rawResult,
-      }, null, 2),
-      aiError: '',
-      aiRecognizedAt: new Date().toISOString(),
-    };
+    throw new Error('Vision AI contract repair failed');
   }
+}
+
+async function requestUnifiedVisionContent(
+  input: UnifiedVisionAiInput,
+  contractRepair: boolean,
+): Promise<string> {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), visionAiRequestTimeoutMs);
+  let response: Awaited<ReturnType<typeof fetch>>;
+  const systemPrompt = buildUnifiedVisionSystemPrompt(input.settings);
+  const repairPrompt = [
+    systemPrompt,
+    '【格式纠错】上一份回答使用了旧版字段结构，已被系统拒绝。',
+    '禁止返回 analysis、display_mode、typography、layout、handwriting 作为顶层结构。',
+    '必须严格按标准输出字段要求重新生成完整 JSON，不得省略任何必填字段。',
+  ].join('\n');
+  try {
+    response = await fetch(buildChatCompletionsUrl(input.settings.baseUrl), {
+      body: JSON.stringify({
+        max_tokens: 1_600,
+        messages: [
+          {
+            content: contractRepair ? repairPrompt : systemPrompt,
+            role: 'system',
+          },
+          {
+            content: [
+              {
+                text: buildUnifiedVisionUserPrompt(input),
+                type: 'text',
+              },
+              {
+                image_url: {
+                  detail: 'low',
+                  url: input.derivative.aiImageUrl,
+                },
+                type: 'image_url',
+              },
+            ],
+            role: 'user',
+          },
+        ],
+        model: input.settings.model,
+        response_format: { type: 'json_object' },
+        temperature: contractRepair ? 0 : 0.3,
+      }),
+      headers: {
+        Authorization: `Bearer ${input.settings.apiKey}`,
+        'Content-Type': 'application/json',
+      },
+      method: 'POST',
+      signal: controller.signal,
+    });
+  } catch (error) {
+    if (error instanceof Error && error.name === 'AbortError') {
+      throw new Error('Vision AI request timed out');
+    }
+    throw error;
+  } finally {
+    clearTimeout(timeout);
+  }
+  if (!response.ok) throw new Error(`Vision AI request failed: ${response.status}`);
+  const payload = await response.json() as {
+    choices?: Array<{ message?: { content?: string } }>;
+  };
+  const content = payload.choices?.[0]?.message?.content;
+  if (!content) throw new Error('Vision AI returned empty content');
+  return content;
+}
+
+export function isRetryableVisionContractError(error: unknown): boolean {
+  if (!(error instanceof Error)) return false;
+  return error.message.startsWith('Invalid current AI response:') ||
+    error.message.startsWith('Invalid photo_tv_payload_v1 response:');
+}
+
+export function describeVisionContractError(error: unknown, model: string): string {
+  const reason = error instanceof Error ? error.message : String(error);
+  const modelName = model.trim() || 'unknown';
+  if (reason.startsWith('Invalid current AI response:')) {
+    return [
+      `AI 模型 ${modelName} 返回了旧版输出结构。`,
+      '可能原因：模型已下线、模型别名回退到旧模型，或该模型不兼容当前标准输出提示词。',
+      '缺少必填字段：scores、narration_options、selected_narration_index、layout_plan。',
+      '请在 AI 设置中选择当前可用的视觉模型并重新测试。',
+    ].join(' ');
+  }
+  if (reason.startsWith('Invalid photo_tv_payload_v1 response:')) {
+    return `AI 模型 ${modelName} 返回了不完整的 photo_tv_payload_v1：${reason.replace('Invalid photo_tv_payload_v1 response: ', '')}。请检查模型兼容性或输出是否被截断。`;
+  }
+  return reason;
 }
 
 export function parseAiJsonContent(content: string): unknown {
