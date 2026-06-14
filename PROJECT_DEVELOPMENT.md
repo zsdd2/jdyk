@@ -388,3 +388,13 @@ P2：
 - 后续实机问题修复：部分手写文案裁切的根因是原估算字宽小于尚首追光字体实际字形宽度，现将手写字宽估算提高并保留 10% 安全宽度；横版 4:3 图片显示偏小的根因是 `ContentScale.Fit`，现改为横版 `Crop` 铺满，竖版 A 继续 `Fit` 居中，B/C 继续在左右画框内 `Crop`。
 - 最终验证：新增方向回退、横版单行、手写字宽安全区和横图铺满测试；Android TV 全量 `testDebugUnitTest` 与 `assembleDebug` 再次通过；最终 Debug APK 已覆盖安装到 `emulator-5554` 并成功启动。按最新要求未继续采集截图。
 - 未来修改计划：在真实电视设备上观察 A/B/C 的随机分布、横图裁切焦点和极端长文案；本轮不推送远端、不制作正式发布包。
+
+2026-06-14 Android 9 安装、磨砂图补转与横图完整播放修复：
+- 当前修改目标：修复 Android 9 下载 APK 后不能稳定拉起系统安装器；让播放相册“立即扫描图片”补转旧版或缺失的 TV 磨砂衍生图；横版照片完整显示且前景不缩放。
+- 根因确认：授权未知来源后应用没有在返回前台时继续安装，且 Android 9 使用的 `ACTION_INSTALL_PACKAGE` 在部分电视固件上兼容性不足；扫描只看 `derivative_status=ready`，会把旧 `tv_4k.webp` 误判为当前 `tv_blur_fill.webp`；横图前景同时使用 `ContentScale.Crop` 和持续 4.5% 缩放。
+- 当前状态：Android 9 安装改为优先使用带 APK MIME、`ClipData` 和读取授权的 `ACTION_VIEW`，授权返回后自动继续拉起安装器；扫描按数据库 URL 与磁盘 `tv_blur_fill.webp` 文件共同判断，旧衍生图会重新生成并计入补转数量；横图前景改为 `Fit`，缩放和垂直位移固定为零，竖图动画保持不变。
+- 当前验证：新增回归测试先确认旧实现失败；修改后 Android 定向测试通过，后端 `app.controller.spec.ts` 71 项全部通过，其中覆盖旧 `tv_4k.webp` 经立即扫描迁移到 `tv_blur_fill.webp`。
+- 发布准备：修复版提升为 Android TV `versionCode 11 / versionName 1.0.6`，GHCR/管理端镜像版本提升为 `1.0.9`；飞牛与 latest Compose 的更新元数据已同步，确保已安装 `1.0.5` 的盒子能检测到新版本。
+- 当前验证：Android 全量单测与 Debug/Release 构建通过；后端 11 个测试套件共 116 项全部通过，后端编译通过。
+- 发布预检：`scripts/release/verify-local-release.ps1` 完整通过；后端发布定向测试 96 项、管理端 5 项测试、typecheck、生产构建、两套 Compose 展开和 Android 清理后全量构建均成功。Debug APK 为 `17,483,629` 字节，SHA256 `DE8F69C22C6524740935EFF6BF73BE4BE233AFDEED455188B3B68C7C777F7C0A`；本地 Release APK 未签名，仅用于构建验证，正式包由 GitHub Actions 签名。
+- 未来修改计划：运行发布预检后提交并推送 `main` 与 `tv-v1.0.6` 标签，等待 GitHub Actions 生成正式签名 APK 和 `1.0.9/latest` GHCR 镜像；随后在真实 Android 9 盒子验证授权返回、系统安装界面、磨砂背景和横图完整显示。如拉取仍出现 `EOF`，继续排查 NAS 到 `ghcr.io` 的网络链路。

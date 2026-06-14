@@ -1,7 +1,7 @@
 param(
-  [string] $ImageVersion = '1.0.8',
-  [int] $TvVersionCode = 10,
-  [string] $TvVersionName = '1.0.5',
+  [string] $ImageVersion = '1.0.9',
+  [int] $TvVersionCode = 11,
+  [string] $TvVersionName = '1.0.6',
   [string] $JavaHome = 'F:\Java\OpenJDK17U-jdk_x64_windows_hotspot_17.0.19_10\jdk-17.0.19+10',
   [string] $AndroidSdk = 'F:\Android\Sdk'
 )

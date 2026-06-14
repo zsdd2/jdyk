@@ -240,11 +240,18 @@ class MemoryExhibitionPlayerTest {
   }
 
   @Test
-  fun landscapePhotosFillTheScreenWhileCenteredPortraitKeepsFit() {
-    assertEquals(ContentScale.Crop, foregroundContentScale(portraitVariant = null))
+  fun landscapePhotosStayFullyVisibleWhilePortraitLayoutsKeepTheirFraming() {
+    assertEquals(ContentScale.Fit, foregroundContentScale(portraitVariant = null))
     assertEquals(ContentScale.Fit, foregroundContentScale(PortraitLayoutVariant.Center))
     assertEquals(ContentScale.Crop, foregroundContentScale(PortraitLayoutVariant.PhotoRight))
     assertEquals(ContentScale.Crop, foregroundContentScale(PortraitLayoutVariant.PhotoLeft))
+  }
+
+  @Test
+  fun landscapeForegroundDoesNotZoomOrTranslate() {
+    assertEquals(1f, foregroundMotionScale(null, motionProgress = 1f), 0.001f)
+    assertEquals(0f, foregroundMotionTranslationY(null, motionProgress = 1f), 0.001f)
+    assertTrue(foregroundMotionScale(PortraitLayoutVariant.Center, motionProgress = 1f) > 1f)
   }
 
   @Test

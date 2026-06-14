@@ -11,6 +11,7 @@ import {
   writeFileSync,
 } from 'fs';
 import { join } from 'path';
+import { DatabaseSync } from 'node:sqlite';
 import { AppController } from './app.controller';
 import {
   AppService,
@@ -1025,6 +1026,46 @@ describe('AppController', () => {
         derivativeStatus: 'ready',
         thumbnailUrl: '/api/derivatives/p_001/thumb_300.webp',
       });
+    });
+
+    it('manually scans a playback album by replacing legacy ready TV derivatives', async () => {
+      const created = appController.createAdminPlaybackAlbum({
+        aiEnabled: false,
+        title: 'legacy TV derivative scan',
+      });
+      appController.addAdminPlaybackAlbumPhotos(created.data.playbackAlbumId, {
+        photoIds: ['p_001'],
+      });
+      const database = new DatabaseSync(databasePath);
+      database.prepare(`
+        UPDATE photos
+        SET derivative_status = 'ready',
+            tv_4k_webp_url = '/api/derivatives/p_001/tv_4k.webp'
+        WHERE photo_id = 'p_001'
+      `).run();
+      database.close();
+
+      const job = await Promise.resolve(
+        appController.createAdminPlaybackAlbumScanJob(
+          created.data.playbackAlbumId,
+        ),
+      );
+      const migratedDatabase = new DatabaseSync(databasePath);
+      const migrated = migratedDatabase.prepare(
+        'SELECT tv_4k_webp_url FROM photos WHERE photo_id = ?',
+      ).get('p_001') as { tv_4k_webp_url: string };
+      migratedDatabase.close();
+
+      expect(job.data).toEqual(expect.objectContaining({
+        status: 'completed',
+        transcodedPhotoCount: 1,
+      }));
+      expect(migrated.tv_4k_webp_url).toBe(
+        '/api/derivatives/p_001/tv_blur_fill.webp',
+      );
+      expect(
+        existsSync(join(derivativeRoot, 'p_001', 'tv_blur_fill.webp')),
+      ).toBe(true);
     });
 
     it('does not enumerate Feiniu photos while listing the photo center', async () => {

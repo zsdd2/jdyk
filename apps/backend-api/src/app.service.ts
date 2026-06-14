@@ -1714,12 +1714,16 @@ export class AppService implements OnModuleDestroy {
     const items = await Promise.resolve(this.listPlaybackAlbumItems(playbackAlbumId));
     let transcodedPhotoCount = 0;
     for (const item of items) {
-      const beforeReady = item.derivativeStatus === 'ready';
+      const beforeReady = repository.hasCurrentTvBlurFillDerivative(item.photoId);
       const derivative = await this.ensurePhotoDerivativesForAiTarget(
         repository,
         item,
       );
-      if (!beforeReady && derivative.derivativeStatus === 'ready') {
+      if (
+        !beforeReady &&
+        derivative.derivativeStatus === 'ready' &&
+        repository.hasCurrentTvBlurFillDerivative(item.photoId)
+      ) {
         transcodedPhotoCount += 1;
       }
     }

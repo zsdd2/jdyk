@@ -11,10 +11,17 @@ class AppUpdateManagerTest {
   }
 
   @Test
-  fun android9InstallUsesPackageInstallerAction() {
+  fun android9InstallUsesViewActionForVendorInstallerCompatibility() {
     assertEquals(
-      "android.intent.action.INSTALL_PACKAGE",
+      "android.intent.action.VIEW",
       AppUpdateManager.installIntentActionForSdk(28),
     )
+  }
+
+  @Test
+  fun pendingInstallResumesOnlyAfterUnknownSourcePermissionIsGranted() {
+    assertFalse(AppUpdateManager.shouldLaunchPendingInstall(false, true))
+    assertFalse(AppUpdateManager.shouldLaunchPendingInstall(true, false))
+    assertEquals(true, AppUpdateManager.shouldLaunchPendingInstall(true, true))
   }
 }

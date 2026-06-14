@@ -392,9 +392,9 @@ private fun ImageStage(
   onError: () -> Unit,
 ) {
   val request = ImageRequest.Builder(LocalContext.current).data(item.displayImageUrl).build()
-  val scale = 1f + 0.045f * motionProgress
+  val scale = foregroundMotionScale(portraitVariant, motionProgress)
   val translateX = 0f
-  val translateY = -12f * motionProgress
+  val translateY = foregroundMotionTranslationY(portraitVariant, motionProgress)
 
   BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
     AsyncImage(
@@ -901,9 +901,19 @@ internal fun foregroundContentScale(
   when (portraitVariant) {
     PortraitLayoutVariant.Center -> ContentScale.Fit
     PortraitLayoutVariant.PhotoRight,
-    PortraitLayoutVariant.PhotoLeft,
-    null -> ContentScale.Crop
+    PortraitLayoutVariant.PhotoLeft -> ContentScale.Crop
+    null -> ContentScale.Fit
   }
+
+internal fun foregroundMotionScale(
+  portraitVariant: PortraitLayoutVariant?,
+  motionProgress: Float,
+): Float = if (portraitVariant == null) 1f else 1f + 0.045f * motionProgress
+
+internal fun foregroundMotionTranslationY(
+  portraitVariant: PortraitLayoutVariant?,
+  motionProgress: Float,
+): Float = if (portraitVariant == null) 0f else -12f * motionProgress
 
 internal fun cinematicDisplayLines(
   text: String,

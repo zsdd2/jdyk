@@ -1657,6 +1657,19 @@ export class SqlitePhotoRepository {
     return assets;
   }
 
+  hasCurrentTvBlurFillDerivative(photoId: string): boolean {
+    this.initialize();
+    const normalizedPhotoId = photoId.trim();
+    const row = this.getDatabase()
+      .prepare('SELECT tv_4k_webp_url FROM photos WHERE photo_id = ?')
+      .get(normalizedPhotoId) as { tv_4k_webp_url: string } | undefined;
+    const expectedUrl = derivativeUrl(normalizedPhotoId, 'tv_blur_fill.webp');
+    const storedUrl = row?.tv_4k_webp_url.split('?')[0] ?? '';
+    return storedUrl === expectedUrl && existsSync(
+      join(this.derivativeRoot, normalizedPhotoId, 'tv_blur_fill.webp'),
+    );
+  }
+
   async ensurePhotoThumbnail(
     photoId: string,
     source?: PhotoDerivativeSource,

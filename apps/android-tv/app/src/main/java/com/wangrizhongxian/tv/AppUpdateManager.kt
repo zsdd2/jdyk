@@ -2,6 +2,7 @@ package com.wangrizhongxian.tv
 
 import android.app.Activity
 import android.content.ActivityNotFoundException
+import android.content.ClipData
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
@@ -41,6 +42,7 @@ data class TvAppUpdateInfo(
 object AppUpdateManager {
   private const val updatePath = "api/device/app-update/latest"
   private const val bufferSize = 8192
+  private const val installPackageAction = "android.intent.action.INSTALL_PACKAGE"
 
   suspend fun fetchLatest(serverUrl: String, client: OkHttpClient): Result<TvAppUpdateInfo?> =
     withContext(Dispatchers.IO) {
@@ -134,12 +136,13 @@ object AppUpdateManager {
   internal fun shouldBlockDownloadForInstallPermission(sdkInt: Int): Boolean = false
 
   internal fun installIntentActionForSdk(sdkInt: Int): String {
-    return if (sdkInt >= Build.VERSION_CODES.N) {
-      Intent.ACTION_INSTALL_PACKAGE
-    } else {
-      Intent.ACTION_VIEW
-    }
+    return Intent.ACTION_VIEW
   }
+
+  internal fun shouldLaunchPendingInstall(
+    hasPendingInstall: Boolean,
+    canInstallPackages: Boolean,
+  ): Boolean = hasPendingInstall && canInstallPackages
 
   fun openInstallPermission(activity: Activity) {
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
@@ -164,21 +167,19 @@ object AppUpdateManager {
     val intent = Intent(installIntentActionForSdk(Build.VERSION.SDK_INT)).apply {
       addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
       addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-      if (action == Intent.ACTION_INSTALL_PACKAGE) {
-        data = apkUri
-        putExtra(Intent.EXTRA_NOT_UNKNOWN_SOURCE, true)
-        putExtra(Intent.EXTRA_RETURN_RESULT, true)
-      } else {
-        setDataAndType(apkUri, "application/vnd.android.package-archive")
-      }
+      clipData = ClipData.newRawUri("wangri-tv-update", apkUri)
+      setDataAndType(apkUri, "application/vnd.android.package-archive")
     }
     try {
       activity.startActivity(intent)
     } catch (_: ActivityNotFoundException) {
-      val fallbackIntent = Intent(Intent.ACTION_VIEW).apply {
+      val fallbackIntent = Intent(installPackageAction).apply {
         addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-        setDataAndType(apkUri, "application/vnd.android.package-archive")
+        clipData = ClipData.newRawUri("wangri-tv-update", apkUri)
+        data = apkUri
+        putExtra(Intent.EXTRA_NOT_UNKNOWN_SOURCE, true)
+        putExtra(Intent.EXTRA_RETURN_RESULT, true)
       }
       activity.startActivity(fallbackIntent)
     }

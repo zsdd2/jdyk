@@ -40,6 +40,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicText
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -67,6 +68,9 @@ import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.style.TextOverflow
@@ -186,6 +190,7 @@ private fun TvMemoryApp() {
   var showLogoutDialog by remember { mutableStateOf(false) }
   var updateUiState by remember { mutableStateOf<TvUpdateUiState>(TvUpdateUiState.Idle) }
   var updateCheckedThisSession by remember { mutableStateOf(false) }
+  var pendingInstallFile by remember { mutableStateOf<File?>(null) }
 
   val activeAlbum = albums.getOrNull(selectedAlbumIndex)
   val activePlaylist = activeAlbum?.items ?: playlistItems
@@ -253,6 +258,13 @@ private fun TvMemoryApp() {
     }
   }
 
+  fun launchDownloadedUpdate(activity: Activity, file: File) {
+    pendingInstallFile = null
+    AppUpdateManager.launchInstall(activity, file).onFailure { error ->
+      updateUiState = TvUpdateUiState.Error(error.message ?: "无法打开系统安装程序")
+    }
+  }
+
   fun installDownloadedUpdate(file: File) {
     val activity = context as? Activity
     if (activity == null) {
@@ -260,12 +272,30 @@ private fun TvMemoryApp() {
       return
     }
     if (!AppUpdateManager.canRequestPackageInstalls(activity)) {
+      pendingInstallFile = file
       AppUpdateManager.openInstallPermission(activity)
       return
     }
-    AppUpdateManager.launchInstall(activity, file).onFailure { error ->
-      updateUiState = TvUpdateUiState.Error(error.message ?: "无法打开系统安装程序")
+    launchDownloadedUpdate(activity, file)
+  }
+
+  val lifecycleOwner = LocalLifecycleOwner.current
+  DisposableEffect(lifecycleOwner, pendingInstallFile) {
+    val observer = LifecycleEventObserver { _, event ->
+      if (event != Lifecycle.Event.ON_RESUME) return@LifecycleEventObserver
+      val activity = context as? Activity ?: return@LifecycleEventObserver
+      val file = pendingInstallFile
+      if (
+        AppUpdateManager.shouldLaunchPendingInstall(
+          hasPendingInstall = file != null,
+          canInstallPackages = AppUpdateManager.canRequestPackageInstalls(activity),
+        )
+      ) {
+        launchDownloadedUpdate(activity, requireNotNull(file))
+      }
     }
+    lifecycleOwner.lifecycle.addObserver(observer)
+    onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
   }
 
   LaunchedEffect(screen) {
