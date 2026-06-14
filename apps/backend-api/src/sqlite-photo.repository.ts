@@ -948,7 +948,7 @@ export class SqlitePhotoRepository {
           a.album_id,
         a.title AS album_name,
         ap.position,
-        COALESCE(NULLIF(p.tv_4k_webp_url, ''), NULLIF(p.display_image_url, ''), photo_url(p.photo_id, 'display')) AS display_image_url,
+        COALESCE(NULLIF(p.display_image_url, ''), photo_url(p.photo_id, 'display')) AS display_image_url,
         photo_url(p.photo_id, 'original') AS image_url,
         COALESCE(NULLIF(p.thumbnail_300_url, ''), NULLIF(p.thumbnail_url, ''), photo_url(p.photo_id, 'thumb')) AS thumbnail_url,
         COALESCE(NULLIF(p.thumbnail_300_url, ''), NULLIF(p.thumbnail_url, ''), photo_url(p.photo_id, 'thumb')) AS thumbnail_300_url,
@@ -2356,7 +2356,7 @@ export class SqlitePhotoRepository {
             COALESCE(NULLIF(p.ai_720_url, ''), NULLIF(p.display_image_url, ''), photo_url(p.photo_id, 'display')) AS ai_720_url,
             COALESCE(NULLIF(p.tv_4k_webp_url, ''), NULLIF(p.display_image_url, ''), photo_url(p.photo_id, 'display')) AS tv_4k_webp_url,
             p.derivative_status,
-            COALESCE(NULLIF(p.tv_4k_webp_url, ''), NULLIF(p.display_image_url, ''), photo_url(p.photo_id, 'display')) AS display_image_url,
+            COALESCE(NULLIF(p.display_image_url, ''), photo_url(p.photo_id, 'display')) AS display_image_url,
             COALESCE(NULLIF(p.image_url, ''), photo_url(p.photo_id, 'original')) AS image_url
           FROM playback_album_photos pap
           JOIN photos p ON p.photo_id = pap.photo_id
@@ -2416,7 +2416,7 @@ export class SqlitePhotoRepository {
             a.album_id,
             a.title AS album_name,
             COALESCE(pap.position, ap.position) AS position,
-            COALESCE(NULLIF(p.tv_4k_webp_url, ''), NULLIF(p.display_image_url, ''), photo_url(p.photo_id, 'display')) AS display_image_url,
+            COALESCE(NULLIF(p.display_image_url, ''), photo_url(p.photo_id, 'display')) AS display_image_url,
             photo_url(p.photo_id, 'original') AS image_url,
             COALESCE(NULLIF(p.thumbnail_300_url, ''), NULLIF(p.thumbnail_url, ''), photo_url(p.photo_id, 'thumb')) AS thumbnail_url,
             COALESCE(NULLIF(p.thumbnail_300_url, ''), NULLIF(p.thumbnail_url, ''), photo_url(p.photo_id, 'thumb')) AS thumbnail_300_url,

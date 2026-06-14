@@ -39,18 +39,20 @@ class MemoryExhibitionPlayerTest {
   }
 
   @Test
-  fun portraitOverlayCaptionSpecsStayInsidePortraitPhotoFrame() {
-    val frame = portraitPhotoFrame()
+  fun portraitCenterLongHandwrittenTextUsesTwoReadableLines() {
     val lines = portraitOverlayCaptionDesignLines()
+    val text = "春日里，花影斑驳，他微笑着凝望远方的山峦"
+    val displayLines = cinematicDisplayLines(
+      text,
+      CaptionRole.Emphasis,
+      wrapEmphasis = portraitEmphasisWrapEnabled(PortraitLayoutVariant.Center),
+    )
+    val fit = cinematicCaptionFit(displayLines, lines[1], CaptionRole.Emphasis)
 
     assertEquals(3, lines.size)
-    lines.forEach { line ->
-      assertTrue(line.left >= frame.left)
-      assertTrue(line.left + line.width <= frame.left + frame.width)
-      assertTrue(line.top >= frame.top)
-      assertTrue(line.top + line.height <= frame.top + frame.height)
-    }
-    assertTrue(lines[1].fontSize < cinematicCaptionDesignLines()[1].fontSize)
+    assertEquals(2, displayLines.size)
+    assertTrue(lines[1].width >= 1900)
+    assertTrue(fit.fontSize >= 120)
   }
 
   @Test
@@ -261,7 +263,7 @@ class MemoryExhibitionPlayerTest {
 
     val fit = cinematicCaptionFit(listOf(text), spec, CaptionRole.Emphasis)
 
-    assertTrue(fit.fontSize <= 100)
+    assertTrue(fit.fontSize >= 120)
     assertTrue(
       cinematicCaptionEstimatedTextWidth(
         text,

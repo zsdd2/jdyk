@@ -1658,7 +1658,7 @@ describe('AppController', () => {
           textColor: '#FFFFFF',
           tvImageUrl: '/api/derivatives/p_001/tv_blur_fill.webp',
         }),
-        displayImageUrl: '/api/derivatives/p_001/tv_blur_fill.webp',
+        displayImageUrl: '/api/photos/p_001/display?source=ceshi',
         layout: expect.objectContaining({
           position: 'right_bottom',
           safeArea: { h: 0.18, w: 0.34, x: 0.58, y: 0.7 },
@@ -2330,7 +2330,7 @@ describe('AppController', () => {
         title: 'TV 播放闭环相册',
       });
       expect(albumDetail.items).toHaveLength(1);
-      expect(albumDetail.items[0]?.displayImageUrl).toBe('/api/derivatives/p_001/tv_blur_fill.webp');
+      expect(albumDetail.items[0]?.displayImageUrl).toBe('/api/photos/p_001/display?source=ceshi');
       expect(playlist.items[0]).toMatchObject({
         ai: expect.objectContaining({
           commentStatus: 'completed',
@@ -2343,7 +2343,7 @@ describe('AppController', () => {
           aiImageUrl: '/api/derivatives/p_001/ai_720.webp',
           tvImageUrl: '/api/derivatives/p_001/tv_blur_fill.webp',
         }),
-        displayImageUrl: '/api/derivatives/p_001/tv_blur_fill.webp',
+        displayImageUrl: '/api/photos/p_001/display?source=ceshi',
         layout: expect.objectContaining({
           safeArea: expect.any(Object),
         }),

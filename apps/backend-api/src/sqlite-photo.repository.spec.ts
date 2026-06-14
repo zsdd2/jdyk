@@ -670,7 +670,7 @@ describe('SqlitePhotoRepository', () => {
         textColor: '#FFFFFF',
         tvImageUrl: '/api/derivatives/p_001/tv_blur_fill.webp',
       }),
-      displayImageUrl: '/api/derivatives/p_001/tv_blur_fill.webp',
+      displayImageUrl: '/api/photos/p_001/display?source=ceshi',
       layout: expect.objectContaining({
         position: 'right_bottom',
         safeArea: { h: 0.18, w: 0.34, x: 0.58, y: 0.7 },
@@ -973,7 +973,7 @@ describe('SqlitePhotoRepository', () => {
         aiImageUrl: '/api/derivatives/p_001/ai_720.webp',
         tvImageUrl: '/api/derivatives/p_001/tv_blur_fill.webp',
       }),
-      displayImageUrl: '/api/derivatives/p_001/tv_blur_fill.webp',
+      displayImageUrl: '/api/photos/p_001/display?source=ceshi',
       thumbnailUrl: '/api/derivatives/p_001/thumb_300.webp',
     });
   });

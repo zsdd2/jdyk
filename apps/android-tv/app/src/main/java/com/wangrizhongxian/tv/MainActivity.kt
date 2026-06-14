@@ -2763,6 +2763,7 @@ data class TvPlaylistItem(
   val captionTitle: String,
   val displayTemplateId: String,
   val displayImageUrl: String,
+  val backgroundImageUrl: String = displayImageUrl,
   val durationMs: Long,
   val aiImageUrl: String,
   val fontStyle: String,
@@ -3081,8 +3082,11 @@ fun parsePlaylistItem(apiBase: String, json: JSONObject): TvPlaylistItem {
   val layoutTemplateId = display?.optString("layoutTemplateId").orEmpty().ifBlank {
     json.optString("layoutTemplateId")
   }
-  val displayImageUrl = display?.optString("tvImageUrl").orEmpty().ifBlank {
-    json.optString("displayImageUrl")
+  val displayImageUrl = json.optString("displayImageUrl").ifBlank {
+    display?.optString("tvImageUrl").orEmpty()
+  }
+  val backgroundImageUrl = display?.optString("tvImageUrl").orEmpty().ifBlank {
+    displayImageUrl
   }
   return TvPlaylistItem(
     aiComment = ai?.optString("comment").orEmpty(),
@@ -3101,6 +3105,7 @@ fun parsePlaylistItem(apiBase: String, json: JSONObject): TvPlaylistItem {
     },
     displayTemplateId = display?.optString("templateId").orEmpty(),
     displayImageUrl = resolveApiUrl(apiBase, displayImageUrl),
+    backgroundImageUrl = resolveApiUrl(apiBase, backgroundImageUrl),
     durationMs = json.optLong("durationMs", 12_000L),
     aiImageUrl = resolveApiUrl(apiBase, display?.optString("aiImageUrl").orEmpty()),
     fontStyle = display?.optString("fontStyle").orEmpty().ifBlank { "sans-serif" },

@@ -391,14 +391,16 @@ private fun ImageStage(
   onReady: (Int, Int) -> Unit,
   onError: () -> Unit,
 ) {
-  val request = ImageRequest.Builder(LocalContext.current).data(item.displayImageUrl).build()
+  val context = LocalContext.current
+  val foregroundRequest = ImageRequest.Builder(context).data(item.displayImageUrl).build()
+  val backgroundRequest = ImageRequest.Builder(context).data(item.backgroundImageUrl).build()
   val scale = foregroundMotionScale(portraitVariant, motionProgress)
   val translateX = 0f
   val translateY = foregroundMotionTranslationY(portraitVariant, motionProgress)
 
   BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
     AsyncImage(
-      model = request,
+      model = backgroundRequest,
       imageLoader = imageLoader,
       contentDescription = item.captionTitle,
       contentScale = ContentScale.Crop,
@@ -425,7 +427,7 @@ private fun ImageStage(
     }
     if (photoFrame == null) {
       AsyncImage(
-        model = request,
+        model = foregroundRequest,
         imageLoader = imageLoader,
         contentDescription = item.captionTitle,
         contentScale = foregroundContentScale(portraitVariant),
@@ -446,7 +448,7 @@ private fun ImageStage(
           .clipToBounds(),
       ) {
         AsyncImage(
-          model = request,
+          model = foregroundRequest,
           imageLoader = imageLoader,
           contentDescription = item.captionTitle,
           contentScale = ContentScale.Crop,
@@ -554,8 +556,7 @@ private fun CaptionStage(
         val displayLines = cinematicDisplayLines(
           text = line,
           role = role,
-          wrapEmphasis = portraitVariant == PortraitLayoutVariant.PhotoRight ||
-            portraitVariant == PortraitLayoutVariant.PhotoLeft,
+          wrapEmphasis = portraitEmphasisWrapEnabled(portraitVariant),
         )
         val displayText = displayLines.joinToString("\n")
         val fit = cinematicCaptionFit(displayLines, spec, role)
@@ -762,31 +763,31 @@ internal fun portraitCenterMetaSpec(): CinematicCaptionLineSpec {
 internal fun portraitOverlayCaptionDesignLines(): List<CinematicCaptionLineSpec> {
   return listOf(
     CinematicCaptionLineSpec(
-      left = 1440,
-      top = 1420,
-      width = 960,
-      height = 66,
-      fontSize = 56,
-      lineHeight = 68,
-      letterSpacing = 18,
+      left = 1070,
+      top = 1390,
+      width = 1700,
+      height = 82,
+      fontSize = 68,
+      lineHeight = 82,
+      letterSpacing = 22,
     ),
     CinematicCaptionLineSpec(
-      left = 1415,
-      top = 1538,
-      width = 1010,
-      height = 138,
-      fontSize = 128,
-      lineHeight = 138,
+      left = 970,
+      top = 1510,
+      width = 1900,
+      height = 320,
+      fontSize = 180,
+      lineHeight = 180,
       letterSpacing = 2,
     ),
     CinematicCaptionLineSpec(
-      left = 1480,
-      top = 1712,
-      width = 880,
-      height = 58,
-      fontSize = 48,
-      lineHeight = 60,
-      letterSpacing = 12,
+      left = 1170,
+      top = 1850,
+      width = 1500,
+      height = 90,
+      fontSize = 76,
+      lineHeight = 90,
+      letterSpacing = 28,
     ),
   )
 }
@@ -921,6 +922,9 @@ internal fun cinematicDisplayLines(
   wrapEmphasis: Boolean,
 ): List<String> =
   if (role == CaptionRole.Emphasis && wrapEmphasis) cinematicEmphasisLines(text) else listOf(text)
+
+internal fun portraitEmphasisWrapEnabled(portraitVariant: PortraitLayoutVariant?): Boolean =
+  portraitVariant != null
 
 internal fun cinematicCaptionFit(
   lines: List<String>,
