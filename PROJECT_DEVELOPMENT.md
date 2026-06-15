@@ -4,6 +4,15 @@
 
 本文是项目计划、完成状态、风险和后续步骤的唯一权威入口。开发规范、API 目录和固定发布流程统一维护在 `DEVELOPMENT_STANDARDS_API.md`。
 
+## 2026-06-15 AI 地点精简、第三行字数限制与 TV 竖屏重叠修复
+
+- 当前目标：修复 AI 识别地点在 TV 顶栏显示过细、旁白第三行过长，以及真实电视上竖屏侧栏版式出现两张照片重叠的问题；随后更新小版本号、完成本地验证和只推送本轮修改。
+- 当前状态：已定位真实电视重叠的根因候选为侧栏竖图同时绘制全屏背景照片和画框前景照片，真机上运行时 blur 或背景派生回退会让全屏背景变成第二张清晰照片；已改为仅横图和居中竖图渲染磨砂背景，侧栏竖图使用暗底承托。后端已在 AI 归一化和旧 `ai_detail` 投影路径压缩地点展示，并将第三段旁白限制为最多 8 个中文字符；默认提示词文件已同步写入地点和第三行要求。版本已提升到项目/管理端 `2.0.1`、Android TV `versionCode 13 / versionName 2.0.1`。根目录缺失的 `kf01.md` 已按项目模板补齐。
+- 最新已验证步骤：后端聚焦测试 `apps/backend-api/node_modules/.bin/jest.CMD app.controller.spec.ts --runInBand --testNamePattern="normalizes AI observed locations|limits the third narration line"` 通过；Android 聚焦测试 `.\gradlew.bat :app:testDebugUnitTest --tests com.wangrizhongxian.tv.MemoryExhibitionPlayerTest.sidePortraitLayoutsDoNotRenderASecondFullScreenPhotoBehindTheFrame --no-daemon` 通过；`node --test scripts/android-tv/generate-update-manifest.test.mjs` 通过 3/3；`apps/backend-api/node_modules/.bin/jest.CMD --runInBand app.controller.spec.ts sqlite-photo.repository.spec.ts` 通过 98/98；Android `:app:testDebugUnitTest` 通过；完整 `.\scripts\release\verify-local-release.ps1` 通过，覆盖版本面、manifest、后端聚焦测试、Web 测试/类型检查/生产构建、Compose 展开、Android clean 后单测与 Debug/Release 构建。
+- 本地产物：已生成 `releases/wangri-tv-2.0.1-debug.apk`，大小 `17483617` 字节，SHA-256 `82ABF4B6846EF368E8CF31B42F3DB5160F56913A5307BEE90F20BD247C8DDE55`；Release 构建产物为未签名 `app-release-unsigned.apk`，不能发布，正式签名包仍需 GitHub Android TV workflow 生成。
+- 下一步计划：按“只提交本轮修改”规则提交并推送；推送后等待 GitHub workflow 生成正式签名 APK，再在真实电视上复核竖屏侧栏视觉。
+- 当前风险：真实电视截图需在用户设备侧最终复核；本地 Release 包未签名不可用于远程更新发布。
+
 ## 2026-06-14 Android TV 1.0.5 与 AI 错误诊断
 
 - 当前目标：真正退出播放后刷新既有竖屏版式随机结果，精准识别旧模型输出，并发布 Android TV `1.0.5`。

@@ -2637,7 +2637,7 @@ export function buildUnifiedVisionSystemPrompt(settings: AiRuntimeSettings): str
     '必须返回 schema_version 为 "photo_tv_payload_v1" 的 JSON 对象。',
     '必须包含且只能围绕这些顶层对象：schema_version、photo_analysis、evaluation、classification、narration、tv_layout、push_decision。',
     'photo_analysis.caption：100-200 字中文画面描述，直接描述看到的内容，不要以“照片中/画面里/这张图片”等开头。',
-    'photo_analysis.observed_meta：必须包含 time、location、weather、evidence；没有明确证据时必须返回空字符串。',
+    'photo_analysis.observed_meta：必须包含 time、location、weather、evidence；没有明确证据时必须返回空字符串；location 国内只写到市+县/区，没有县/区只写城市，国外只写国家。',
     'evaluation.memory_score 与 evaluation.beauty_score：0-100 数值，允许一位小数。',
     'evaluation.is_trash：boolean，低俗违规、账单收据、广告、杂物、测试图、屏幕截图、严重模糊图为 true 或低分。',
     'evaluation.reason：不超过 80 字中文评分理由。',
@@ -2665,7 +2665,7 @@ function buildFiveNarrationVariantsPrompt(): string {
     '每组对象格式：{"scene_description":"...","handwritten_thought":"...","lyrical_closure":"..."}。',
     'scene_description：8-16 个中文字符，客观、具体，只写真实可见的人物、动作、物件、光线、颜色或环境，不编造关系和故事。',
     'handwritten_thought：12-25 个中文字符，是最打动人的一句，适合手写体；温暖克制、生活化，可有轻微诗意，不要过度煽情。',
-    'lyrical_closure：8-18 个中文字符，轻轻收住情绪；不要广告语、鸡汤文或祝福语，少用“幸福、感动、美好、珍贵、永远”。',
+    'lyrical_closure：不超过 8 个中文字符，轻轻收住情绪；不要广告语、鸡汤文或祝福语，少用“幸福、感动、美好、珍贵、永远”。',
     '5 组分别从具体物件、人物动作、现场氛围、日后回忆、诗意总结等角度生成，不要重复同一种表达。',
     '不要把文件名、相册名、评分、分类过程写进旁白。',
   ].join('\n');
@@ -3020,7 +3020,7 @@ function validatePhotoTvPayloadV1(input: {
 function normalizeObservedMeta(value: unknown): NonNullable<UnifiedAiInsight['aiObservedMeta']> {
   const observedMeta = getObjectRecord(value);
   return {
-    location: typeof observedMeta.location === 'string' ? observedMeta.location.trim() : '',
+    location: normalizeObservedLocationForDisplay(observedMeta.location),
     time: typeof observedMeta.time === 'string' ? observedMeta.time.trim() : '',
     weather: typeof observedMeta.weather === 'string' ? observedMeta.weather.trim() : '',
   };
@@ -3044,6 +3044,7 @@ function normalizeNarrationVariants(value: unknown): Array<{
         candidate.lyrical_closure ??
         candidate.closing_line ??
         candidate.lyricalClosure,
+        8,
       ),
       sceneDescription: normalizeNarrationPart(
         candidate.scene_description ??
@@ -3060,8 +3061,76 @@ function normalizeNarrationVariants(value: unknown): Array<{
     .slice(0, 5);
 }
 
-function normalizeNarrationPart(value: unknown): string {
-  return typeof value === 'string' ? value.trim().slice(0, 48) : '';
+function normalizeNarrationPart(value: unknown, maxLength = 48): string {
+  return typeof value === 'string' ? value.trim().slice(0, maxLength) : '';
+}
+
+function normalizeObservedLocationForDisplay(value: unknown): string {
+  if (typeof value !== 'string') return '';
+  const location = value.trim().replace(/\s+/g, '');
+  if (!location) return '';
+  if (!isDomesticLocation(location)) return normalizeForeignLocationForDisplay(location);
+  const withoutCountry = location
+    .replace(/^中华人民共和国/, '')
+    .replace(/^中国大陆/, '')
+    .replace(/^中国/, '');
+  const municipality = withoutCountry.match(/^(北京市|上海市|天津市|重庆市)(.*)$/);
+  if (municipality) {
+    const city = municipality[1];
+    const county = municipality[2].match(/^(.+?(?:县|区))/)?.[1] ?? '';
+    return county ? `${city}${county}` : city;
+  }
+  const withoutProvince = withoutCountry.replace(
+    /^(?:[^省]{2,12}省|(?:内蒙古|广西壮族|西藏|宁夏回族|新疆维吾尔)自治区|香港特别行政区|澳门特别行政区)/,
+    '',
+  );
+  const prefecture = withoutProvince.match(/^(.+?(?:自治州|地区|盟|市))(.*)$/) ??
+    withoutProvince.match(/^(.+?州)(.*)$/);
+  if (prefecture) {
+    const city = prefecture[1];
+    const county = prefecture[2].match(/^(.+?(?:县|区|市|旗))/)?.[1] ?? '';
+    return county ? `${city}${county}` : city;
+  }
+  const countyOnly = withoutProvince.match(/^(.+?(?:县|区|市|旗))/)?.[1];
+  return countyOnly ?? withoutProvince;
+}
+
+function isDomesticLocation(location: string): boolean {
+  return /^中国|^中华人民共和国|^中国大陆/.test(location) ||
+    /^(?:[^省]{2,12}省|北京市|上海市|天津市|重庆市|(?:内蒙古|广西壮族|西藏|宁夏回族|新疆维吾尔)自治区|香港特别行政区|澳门特别行政区)/.test(location);
+}
+
+function normalizeForeignLocationForDisplay(location: string): string {
+  const countryAliases: Array<[RegExp, string]> = [
+    [/日本|japan/i, '日本'],
+    [/美国|usa|unitedstates|america/i, '美国'],
+    [/英国|uk|unitedkingdom|england/i, '英国'],
+    [/法国|france/i, '法国'],
+    [/德国|germany/i, '德国'],
+    [/意大利|italy/i, '意大利'],
+    [/西班牙|spain/i, '西班牙'],
+    [/加拿大|canada/i, '加拿大'],
+    [/澳大利亚|australia/i, '澳大利亚'],
+    [/新西兰|newzealand/i, '新西兰'],
+    [/韩国|southkorea|korea/i, '韩国'],
+    [/泰国|thailand/i, '泰国'],
+    [/新加坡|singapore/i, '新加坡'],
+    [/马来西亚|malaysia/i, '马来西亚'],
+    [/印度尼西亚|indonesia/i, '印度尼西亚'],
+    [/越南|vietnam/i, '越南'],
+    [/菲律宾|philippines/i, '菲律宾'],
+    [/俄罗斯|russia/i, '俄罗斯'],
+    [/瑞士|switzerland/i, '瑞士'],
+    [/奥地利|austria/i, '奥地利'],
+    [/荷兰|netherlands/i, '荷兰'],
+    [/比利时|belgium/i, '比利时'],
+    [/希腊|greece/i, '希腊'],
+    [/土耳其|turkey/i, '土耳其'],
+    [/印度|india/i, '印度'],
+    [/阿联酋|uae|unitedarabemirates/i, '阿联酋'],
+  ];
+  const compact = location.replace(/[,\-_/，、]/g, '');
+  return countryAliases.find(([pattern]) => pattern.test(compact))?.[1] ?? location;
 }
 
 function normalizeNarrationIndex(value: unknown, length: number): number {

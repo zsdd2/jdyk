@@ -3948,7 +3948,7 @@ function buildPlaylistTopMeta(
   projection: AiDetailProjection | null,
 ): NonNullable<PlaylistItem['topMeta']> {
   return {
-    location: row.location || projection?.aiObservedMeta?.location || '',
+    location: normalizeObservedLocationForDisplay(row.location || projection?.aiObservedMeta?.location || ''),
     time: row.taken_at || projection?.aiObservedMeta?.time || '',
     weather: projection?.aiObservedMeta?.weather || '',
   };
@@ -3978,6 +3978,7 @@ function extractAiNarrationVariants(
         candidate.lyrical_closure ??
           candidate.lyricalClosure ??
           candidate.closing_line,
+        8,
       ),
       sceneDescription: normalizeNarrationPart(
         candidate.scene_description ??
@@ -4000,15 +4001,83 @@ function extractAiObservedMeta(
   const photoAnalysis = asRecord(raw.photo_analysis);
   const observedMeta = asRecord(photoAnalysis?.observed_meta);
   if (!observedMeta) return undefined;
-  const location = typeof observedMeta.location === 'string' ? observedMeta.location.trim() : '';
+  const location = normalizeObservedLocationForDisplay(observedMeta.location);
   const time = typeof observedMeta.time === 'string' ? observedMeta.time.trim() : '';
   const weather = typeof observedMeta.weather === 'string' ? observedMeta.weather.trim() : '';
   if (!location && !time && !weather) return undefined;
   return { location, time, weather };
 }
 
-function normalizeNarrationPart(value: unknown): string {
-  return typeof value === 'string' ? value.trim().slice(0, 48) : '';
+function normalizeNarrationPart(value: unknown, maxLength = 48): string {
+  return typeof value === 'string' ? value.trim().slice(0, maxLength) : '';
+}
+
+function normalizeObservedLocationForDisplay(value: unknown): string {
+  if (typeof value !== 'string') return '';
+  const location = value.trim().replace(/\s+/g, '');
+  if (!location) return '';
+  if (!isDomesticLocation(location)) return normalizeForeignLocationForDisplay(location);
+  const withoutCountry = location
+    .replace(/^中华人民共和国/, '')
+    .replace(/^中国大陆/, '')
+    .replace(/^中国/, '');
+  const municipality = withoutCountry.match(/^(北京市|上海市|天津市|重庆市)(.*)$/);
+  if (municipality) {
+    const city = municipality[1];
+    const county = municipality[2].match(/^(.+?(?:县|区))/)?.[1] ?? '';
+    return county ? `${city}${county}` : city;
+  }
+  const withoutProvince = withoutCountry.replace(
+    /^(?:[^省]{2,12}省|(?:内蒙古|广西壮族|西藏|宁夏回族|新疆维吾尔)自治区|香港特别行政区|澳门特别行政区)/,
+    '',
+  );
+  const prefecture = withoutProvince.match(/^(.+?(?:自治州|地区|盟|市))(.*)$/) ??
+    withoutProvince.match(/^(.+?州)(.*)$/);
+  if (prefecture) {
+    const city = prefecture[1];
+    const county = prefecture[2].match(/^(.+?(?:县|区|市|旗))/)?.[1] ?? '';
+    return county ? `${city}${county}` : city;
+  }
+  const countyOnly = withoutProvince.match(/^(.+?(?:县|区|市|旗))/)?.[1];
+  return countyOnly ?? withoutProvince;
+}
+
+function isDomesticLocation(location: string): boolean {
+  return /^中国|^中华人民共和国|^中国大陆/.test(location) ||
+    /^(?:[^省]{2,12}省|北京市|上海市|天津市|重庆市|(?:内蒙古|广西壮族|西藏|宁夏回族|新疆维吾尔)自治区|香港特别行政区|澳门特别行政区)/.test(location);
+}
+
+function normalizeForeignLocationForDisplay(location: string): string {
+  const countryAliases: Array<[RegExp, string]> = [
+    [/日本|japan/i, '日本'],
+    [/美国|usa|unitedstates|america/i, '美国'],
+    [/英国|uk|unitedkingdom|england/i, '英国'],
+    [/法国|france/i, '法国'],
+    [/德国|germany/i, '德国'],
+    [/意大利|italy/i, '意大利'],
+    [/西班牙|spain/i, '西班牙'],
+    [/加拿大|canada/i, '加拿大'],
+    [/澳大利亚|australia/i, '澳大利亚'],
+    [/新西兰|newzealand/i, '新西兰'],
+    [/韩国|southkorea|korea/i, '韩国'],
+    [/泰国|thailand/i, '泰国'],
+    [/新加坡|singapore/i, '新加坡'],
+    [/马来西亚|malaysia/i, '马来西亚'],
+    [/印度尼西亚|indonesia/i, '印度尼西亚'],
+    [/越南|vietnam/i, '越南'],
+    [/菲律宾|philippines/i, '菲律宾'],
+    [/俄罗斯|russia/i, '俄罗斯'],
+    [/瑞士|switzerland/i, '瑞士'],
+    [/奥地利|austria/i, '奥地利'],
+    [/荷兰|netherlands/i, '荷兰'],
+    [/比利时|belgium/i, '比利时'],
+    [/希腊|greece/i, '希腊'],
+    [/土耳其|turkey/i, '土耳其'],
+    [/印度|india/i, '印度'],
+    [/阿联酋|uae|unitedarabemirates/i, '阿联酋'],
+  ];
+  const compact = location.replace(/[,\-_/，、]/g, '');
+  return countryAliases.find(([pattern]) => pattern.test(compact))?.[1] ?? location;
 }
 
 function asRecord(value: unknown): Record<string, unknown> | null {

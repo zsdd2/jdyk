@@ -250,6 +250,14 @@ class MemoryExhibitionPlayerTest {
   }
 
   @Test
+  fun sidePortraitLayoutsDoNotRenderASecondFullScreenPhotoBehindTheFrame() {
+    assertEquals(true, shouldRenderBlurredBackground(portraitVariant = null))
+    assertEquals(true, shouldRenderBlurredBackground(PortraitLayoutVariant.Center))
+    assertEquals(false, shouldRenderBlurredBackground(PortraitLayoutVariant.PhotoRight))
+    assertEquals(false, shouldRenderBlurredBackground(PortraitLayoutVariant.PhotoLeft))
+  }
+
+  @Test
   fun landscapeForegroundDoesNotZoomOrTranslate() {
     assertEquals(1f, foregroundMotionScale(null, motionProgress = 1f), 0.001f)
     assertEquals(0f, foregroundMotionTranslationY(null, motionProgress = 1f), 0.001f)

@@ -399,20 +399,24 @@ private fun ImageStage(
   val translateY = foregroundMotionTranslationY(portraitVariant, motionProgress)
 
   BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
-    AsyncImage(
-      model = backgroundRequest,
-      imageLoader = imageLoader,
-      contentDescription = item.captionTitle,
-      contentScale = ContentScale.Crop,
-      modifier = Modifier
-        .fillMaxSize()
-        .graphicsLayer {
-          scaleX = 1.08f + 0.025f * motionProgress
-          scaleY = 1.08f + 0.025f * motionProgress
-        }
-        .blur(22.dp),
-    )
-    Box(modifier = Modifier.fillMaxSize().background(Color(0x22000000)))
+    if (shouldRenderBlurredBackground(portraitVariant)) {
+      AsyncImage(
+        model = backgroundRequest,
+        imageLoader = imageLoader,
+        contentDescription = item.captionTitle,
+        contentScale = ContentScale.Crop,
+        modifier = Modifier
+          .fillMaxSize()
+          .graphicsLayer {
+            scaleX = 1.08f + 0.025f * motionProgress
+            scaleY = 1.08f + 0.025f * motionProgress
+          }
+          .blur(22.dp),
+      )
+      Box(modifier = Modifier.fillMaxSize().background(Color(0x22000000)))
+    } else {
+      Box(modifier = Modifier.fillMaxSize().background(Color(0xFF050505)))
+    }
 
     val photoFrame = when (portraitVariant) {
       PortraitLayoutVariant.PhotoRight -> portraitPhotoRightFrame()
@@ -905,6 +909,10 @@ internal fun foregroundContentScale(
     PortraitLayoutVariant.PhotoLeft -> ContentScale.Crop
     null -> ContentScale.Fit
   }
+
+internal fun shouldRenderBlurredBackground(
+  portraitVariant: PortraitLayoutVariant?,
+): Boolean = portraitVariant == null || portraitVariant == PortraitLayoutVariant.Center
 
 internal fun foregroundMotionScale(
   portraitVariant: PortraitLayoutVariant?,

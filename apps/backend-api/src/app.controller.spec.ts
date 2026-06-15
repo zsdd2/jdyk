@@ -1743,7 +1743,7 @@ describe('AppController', () => {
           aiComment: [
             'A warm family moment',
             'The room still feels bright',
-            'A small day becomes a long memory',
+            'A small ',
           ].join('\n'),
           aiFontStyle: 'handwriting',
           aiLayoutPosition: 'center_safe',
@@ -1853,6 +1853,114 @@ describe('AppController', () => {
         time: '14:36',
         weather: 'Sunny / Clear',
       });
+    });
+
+    it('normalizes AI observed locations for TV top metadata display', () => {
+      const basePayload = {
+        classification: {
+          category: '旅行',
+          scene_tags: ['旅行', '街景', '人物'],
+          tv_suitability: 'high',
+        },
+        layout_plan: {
+          font_style: 'handwriting',
+          position: 'bottom_left',
+          safe_area: { h: 0.2, w: 0.4, x: 0.08, y: 0.7 },
+          text_color: '#FFFFFF',
+        },
+        narration_options: Array.from({ length: 5 }, (_, index) => ({
+          closing_line: `轻轻收住${index + 1}`,
+          handwritten_line: `街角的光还在心里${index + 1}`,
+          scene_line: `街边家人合影${index + 1}`,
+        })),
+        scores: {
+          beauty_score: 88,
+          is_trash: false,
+          memory_score: 90,
+          reason: '画面清晰，适合电视播放。',
+        },
+        selected_narration_index: 0,
+      };
+
+      expect(
+        normalizeUnifiedVisionResult({
+          ...basePayload,
+          photo_analysis: {
+            caption: '街边有家人站在一起，背景能看到道路和建筑。',
+            observed_meta: {
+              location: '中国浙江省杭州市西湖区文三路街道',
+              time: '',
+              weather: '',
+            },
+          },
+          schema_version: 'photo_tv_payload_v1',
+        }).aiObservedMeta.location,
+      ).toBe('杭州市西湖区');
+      expect(
+        normalizeUnifiedVisionResult({
+          ...basePayload,
+          photo_analysis: {
+            caption: '城市街道上有家人合影。',
+            observed_meta: {
+              location: '中国浙江省杭州市',
+              time: '',
+              weather: '',
+            },
+          },
+          schema_version: 'photo_tv_payload_v1',
+        }).aiObservedMeta.location,
+      ).toBe('杭州市');
+      expect(
+        normalizeUnifiedVisionResult({
+          ...basePayload,
+          photo_analysis: {
+            caption: '街边有家人合影，店招显示国外城市信息。',
+            observed_meta: {
+              location: '日本京都府京都市东山区清水街区',
+              time: '',
+              weather: '',
+            },
+          },
+          schema_version: 'photo_tv_payload_v1',
+        }).aiObservedMeta.location,
+      ).toBe('日本');
+    });
+
+    it('limits the third narration line to eight Chinese characters', () => {
+      const narrationOptions = Array.from({ length: 5 }, (_, index) => ({
+        closing_line: `这一天被晚风慢慢收好${index + 1}`,
+        handwritten_line: `街角的光还在心里${index + 1}`,
+        scene_line: `街边家人合影${index + 1}`,
+      }));
+
+      const insight = normalizeUnifiedVisionResult({
+        classification: {
+          category: '旅行',
+          scene_tags: ['旅行', '街景', '人物'],
+          tv_suitability: 'high',
+        },
+        layout_plan: {
+          font_style: 'handwriting',
+          position: 'bottom_left',
+          safe_area: { h: 0.2, w: 0.4, x: 0.08, y: 0.7 },
+          text_color: '#FFFFFF',
+        },
+        narration_options: narrationOptions,
+        photo_analysis: {
+          caption: '街边有家人站在一起，背景能看到道路和建筑。',
+        },
+        schema_version: 'photo_tv_payload_v1',
+        scores: {
+          beauty_score: 88,
+          is_trash: false,
+          memory_score: 90,
+          reason: '画面清晰，适合电视播放。',
+        },
+        selected_narration_index: 0,
+      });
+
+      expect(insight.aiComment.split('\n')[2]).toBe('这一天被晚风慢慢');
+      expect(insight.aiNarrationVariants?.[0]?.lyricalClosure).toBe('这一天被晚风慢慢');
     });
 
     it('appends the standard output contract after the business prompt as the final override', () => {
@@ -2045,12 +2153,12 @@ describe('AppController', () => {
       });
 
       expect(insight.aiComment).toBe(
-        '小手翻开彩色绘本1\n那天读过的故事，还在慢慢长大1\n午后的光没有走远1',
+        '小手翻开彩色绘本1\n那天读过的故事，还在慢慢长大1\n午后的光没有走远',
       );
       expect(insight.aiNarrationVariants).toHaveLength(5);
       expect(insight.aiNarrationVariants?.[4]).toEqual({
         handwrittenThought: '那天读过的故事，还在慢慢长大5',
-        lyricalClosure: '午后的光没有走远5',
+        lyricalClosure: '午后的光没有走远',
         sceneDescription: '小手翻开彩色绘本5',
       });
     });
@@ -2098,7 +2206,7 @@ describe('AppController', () => {
       expect(insight).toEqual(
         expect.objectContaining({
           aiBeautyScore: 88,
-          aiComment: '院中亲友围坐合影3\n旧院里的笑声，轻轻落在心上3\n风把那天慢慢收好3',
+          aiComment: '院中亲友围坐合影3\n旧院里的笑声，轻轻落在心上3\n风把那天慢慢收好',
           aiFontStyle: 'handwriting',
           aiLayoutPosition: 'top_right',
           aiMemoryScore: 94,
@@ -2153,7 +2261,7 @@ describe('AppController', () => {
       expect(insight).toEqual(
         expect.objectContaining({
           aiBeautyScore: 80,
-          aiComment: '红色礼篮摆在地上3\n大家站在一起，热闹就有了形状3\n日子也跟着亮起来3',
+          aiComment: '红色礼篮摆在地上3\n大家站在一起，热闹就有了形状3\n日子也跟着亮起来',
           aiFontStyle: 'handwriting',
           aiLayoutPosition: 'top_left',
           aiMemoryScore: 89,
