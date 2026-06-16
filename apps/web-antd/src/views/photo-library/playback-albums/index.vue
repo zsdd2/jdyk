@@ -53,6 +53,8 @@ import {
 } from '#/api/photo-library';
 
 import {
+  getAuthorizedDeviceSummary,
+  getPlaybackAlbumReadiness,
   buildPlaybackAlbumCoverPath,
   formatPlaybackAlbumPhotoCount,
   sortPlaybackAlbumsByUpdatedAt,
@@ -135,6 +137,16 @@ const sortedAlbums = computed(() => sortPlaybackAlbumsByUpdatedAt(albums.value))
 const totalPhotoCount = computed(() =>
   albums.value.reduce((total, album) => total + album.photoCount, 0),
 );
+const enabledDeviceCount = computed(() =>
+  devices.value.filter((device) => device.enabled).length,
+);
+const playableAlbumCount = computed(
+  () =>
+    albums.value.filter(
+      (album) => getPlaybackAlbumReadiness(album, devices.value).status === 'ready',
+    ).length,
+);
+const attentionAlbumCount = computed(() => albums.value.length - playableAlbumCount.value);
 const selectedMemberRowKeySet = computed(() => new Set(selectedMemberRowKeys.value));
 const selectedMemberRecords = computed(() =>
   members.value.filter((item) => selectedMemberRowKeySet.value.has(memberRowKey(item))),
@@ -186,6 +198,7 @@ const albumColumns = [
   { dataIndex: 'coverPhotoId', key: 'coverPhotoId', title: '封面', width: 96 },
   { dataIndex: 'title', key: 'title', title: '播放相册' },
   { dataIndex: 'sourceType', key: 'sourceType', title: '来源', width: 150 },
+  { dataIndex: 'playbackReadiness', key: 'playbackReadiness', title: '可播状态', width: 190 },
   { dataIndex: 'aiEnabled', key: 'aiPolicy', title: 'AI 策略', width: 230 },
   { dataIndex: 'pushScoreThreshold', key: 'pushPolicy', title: '推送要求', width: 260 },
   { dataIndex: 'photoCount', key: 'photoCount', title: '照片', width: 110 },
@@ -241,6 +254,10 @@ async function loadDevices() {
   } finally {
     devicesLoading.value = false;
   }
+}
+
+async function loadPlaybackOverview() {
+  await Promise.all([loadAlbums(), loadDevices()]);
 }
 
 async function openCreateAlbumModal() {
@@ -651,7 +668,9 @@ function memberRowKey(record: PhotoCenterItem) {
 
 function albumCoverUrl(record: PlaybackAlbum | Record<string, any>) {
   const coverPath = buildPlaybackAlbumCoverPath({
+    coverImageUrl: typeof record.coverImageUrl === 'string' ? record.coverImageUrl : '',
     coverPhotoId: typeof record.coverPhotoId === 'string' ? record.coverPhotoId : '',
+    thumbnailUrl: typeof record.thumbnailUrl === 'string' ? record.thumbnailUrl : '',
   });
   return coverPath ? getPhotoAssetUrl(coverPath) : '';
 }
@@ -673,6 +692,14 @@ function albumSourceLabel(record: PlaybackAlbum | Record<string, any>) {
     return record.sourceAlbumTitle || record.sourceAlbumId || '飞牛相册';
   }
   return '手动分拣';
+}
+
+function playbackReadiness(record: PlaybackAlbum | Record<string, any>) {
+  return getPlaybackAlbumReadiness(record as PlaybackAlbum, devices.value);
+}
+
+function authorizedDeviceSummary(record: PlaybackAlbum | Record<string, any>) {
+  return getAuthorizedDeviceSummary(record as PlaybackAlbum, devices.value);
 }
 
 function formatTagSummary(tags: string[] | undefined) {
@@ -855,7 +882,7 @@ async function saveMemberAiInsight(
   }
 }
 
-onMounted(loadAlbums);
+onMounted(loadPlaybackOverview);
 </script>
 
 <template>
@@ -869,13 +896,25 @@ onMounted(loadAlbums);
         <span>已分拣照片</span>
         <strong>{{ totalPhotoCount }}</strong>
       </Card>
+      <Card size="small">
+        <span>可播放</span>
+        <strong>{{ playableAlbumCount }}</strong>
+      </Card>
+      <Card size="small">
+        <span>需关注</span>
+        <strong>{{ attentionAlbumCount }}</strong>
+      </Card>
+      <Card size="small">
+        <span>启用设备</span>
+        <strong>{{ enabledDeviceCount }}</strong>
+      </Card>
     </div>
 
     <Card>
       <div class="album-toolbar">
         <Space>
           <Button @click="aiTaskVisible = true">AI 进度</Button>
-          <Button :loading="loading" @click="loadAlbums">刷新</Button>
+          <Button :loading="loading || devicesLoading" @click="loadPlaybackOverview">刷新</Button>
           <Button @click="openCreateAlbumModal">新建播放相册</Button>
           <Button type="primary" @click="openSortDesk">快速分拣台</Button>
           <Button @click="goToPhotoCenter">照片列表</Button>
@@ -924,6 +963,18 @@ onMounted(loadAlbums);
                 {{ record.sourceType === 'feiniu_album' ? '飞牛相册' : '手动' }}
               </Tag>
               <span>{{ albumSourceLabel(record) }}</span>
+            </div>
+          </template>
+
+          <template v-else-if="column.key === 'playbackReadiness'">
+            <div class="readiness-cell">
+              <Tag :color="playbackReadiness(record).color">
+                {{ playbackReadiness(record).label }}
+              </Tag>
+              <span>{{ playbackReadiness(record).description }}</span>
+              <small>
+                {{ authorizedDeviceSummary(record).label }} / {{ authorizedDeviceSummary(record).names }}
+              </small>
             </div>
           </template>
 
@@ -1725,7 +1776,7 @@ onMounted(loadAlbums);
 <style scoped>
 .album-metrics {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 180px));
+  grid-template-columns: repeat(5, minmax(0, 180px));
   gap: 12px;
   margin-bottom: 16px;
 }
@@ -1805,6 +1856,26 @@ onMounted(loadAlbums);
 
 .legacy-row-actions {
   display: none;
+}
+
+.readiness-cell {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.readiness-cell span,
+.readiness-cell small {
+  overflow: hidden;
+  color: #64748b;
+  font-size: 12px;
+  line-height: 1.35;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.readiness-cell small {
+  color: #94a3b8;
 }
 
 .policy-cell > :deep(.ant-space:not(:first-child)),

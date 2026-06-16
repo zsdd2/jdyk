@@ -16,6 +16,7 @@ import { computed, onMounted, reactive, ref } from 'vue';
 import { Page } from '@vben/common-ui';
 
 import {
+  Alert,
   Button,
   Card,
   Dropdown,
@@ -37,6 +38,7 @@ import {
 import {
   addPlaybackAlbumPhotosApi,
   createPlaybackAlbumApi,
+  createPhotoCenterBackfillJobApi,
   createPhotoAiJobApi,
   getPhotoAssetUrl,
   getPhotoCenterItemsApi,
@@ -53,6 +55,10 @@ import {
   validatePlaybackAlbumAssignment,
 } from './playback-album-assignment';
 import {
+  buildPhotoReadinessSummary,
+  formatBackfillJobFeedback,
+} from './photo-list-status';
+import {
   buildAiNarrationOptions,
   formatAiNarrationVariant,
   resolveAiNarrationVariants,
@@ -62,7 +68,10 @@ import AiTaskProgressModal from '../components/AiTaskProgressModal.vue';
 const loading = ref(false);
 const albumLoading = ref(false);
 const assignmentLoading = ref(false);
+const backfillLoading = ref(false);
 const assignmentVisible = ref(false);
+const batchMetadataSaving = ref(false);
+const batchMetadataVisible = ref(false);
 const photoEditVisible = ref(false);
 const photoEditSaving = ref(false);
 const aiRefreshingPhotoId = ref('');
@@ -77,6 +86,7 @@ const playbackAlbums = ref<PlaybackAlbum[]>([]);
 const selectedRowKeys = ref<string[]>([]);
 const selectedRows = ref<PhotoCenterItem[]>([]);
 const total = ref(0);
+const lastBackfillFeedback = ref('');
 const query = reactive<GetPhotoCenterItemsInput>({
   page: 1,
   pageSize: 20,
@@ -90,9 +100,17 @@ const assignmentForm = reactive({
 const photoEditForm = reactive({
   captionTitle: '',
   importAlbumTitle: '',
+  location: '',
   photoId: '',
   sourceAlbumKind: '' as PhotoCenterItem['sourceAlbumKind'],
   sourceOwnerName: '',
+  takenAt: '',
+  weather: '',
+});
+const batchMetadataForm = reactive({
+  location: '',
+  takenAt: '',
+  weather: '',
 });
 
 const sourceOptions = [
@@ -140,6 +158,7 @@ const pagination = computed(() => ({
   showSizeChanger: true,
   total: total.value,
 }));
+const currentPageReadiness = computed(() => buildPhotoReadinessSummary(items.value));
 const selectedPhotoIds = computed(() => buildSelectedPhotoIds(selectedRows.value));
 const selectedPhotoCount = computed(() => selectedPhotoIds.value.length);
 const playbackAlbumOptions = computed(() =>
@@ -210,6 +229,21 @@ function resetFilters() {
   void loadPhotos();
 }
 
+function applyAiStatusShortcut(
+  target: 'comment' | 'score',
+  status: PhotoCenterAiStatus,
+) {
+  query.aiScoreStatus = target === 'score' ? status : undefined;
+  query.aiCommentStatus = target === 'comment' ? status : undefined;
+  query.page = 1;
+  clearSelection();
+  void loadPhotos();
+}
+
+function clearLastBackfillFeedback() {
+  lastBackfillFeedback.value = '';
+}
+
 function handleTableChange(pageState: { current?: number; pageSize?: number }) {
   query.page = pageState.current ?? 1;
   query.pageSize = pageState.pageSize ?? 20;
@@ -269,13 +303,20 @@ async function submitAssignment() {
   }
 }
 
-function openPhotoEdit(record: PhotoCenterItem | Record<string, any>) {
-  const photo = record as PhotoCenterItem;
+function fillPhotoEditForm(photo: PhotoCenterItem) {
   photoEditForm.captionTitle = photo.captionTitle || photo.filename;
   photoEditForm.importAlbumTitle = photo.importAlbumTitle || photo.albumName;
+  photoEditForm.location = photo.location;
   photoEditForm.photoId = photo.photoId;
   photoEditForm.sourceAlbumKind = photo.sourceAlbumKind;
   photoEditForm.sourceOwnerName = photo.sourceOwnerName;
+  photoEditForm.takenAt = photo.takenAt;
+  photoEditForm.weather = extractObservedWeather(photo);
+}
+
+function openPhotoEdit(record: PhotoCenterItem | Record<string, any>) {
+  const photo = record as PhotoCenterItem;
+  fillPhotoEditForm(photo);
   photoEditVisible.value = true;
 }
 
@@ -286,16 +327,60 @@ async function submitPhotoEdit() {
     const updated = await updatePhotoMetadataApi(photoEditForm.photoId, {
       captionTitle: photoEditForm.captionTitle,
       importAlbumTitle: photoEditForm.importAlbumTitle,
+      location: photoEditForm.location,
       sourceAlbumKind: photoEditForm.sourceAlbumKind,
       sourceOwnerName: photoEditForm.sourceOwnerName,
+      takenAt: photoEditForm.takenAt,
+      weather: photoEditForm.weather,
     });
     items.value = items.value.map((item) =>
       item.photoId === updated.photoId ? { ...item, ...updated } : item,
     );
+    if (aiDetailRecord.value?.photoId === updated.photoId) {
+      aiDetailRecord.value = { ...aiDetailRecord.value, ...updated };
+      fillPhotoEditForm(aiDetailRecord.value);
+    }
     message.success('照片信息已更新');
     photoEditVisible.value = false;
   } finally {
     photoEditSaving.value = false;
+  }
+}
+
+function openBatchMetadataModal() {
+  if (selectedPhotoCount.value === 0) {
+    message.warning('请选择要批量修改的照片');
+    return;
+  }
+  batchMetadataForm.location = '';
+  batchMetadataForm.takenAt = '';
+  batchMetadataForm.weather = '';
+  batchMetadataVisible.value = true;
+}
+
+async function submitBatchMetadata() {
+  if (selectedPhotoCount.value === 0) return;
+  const input = {
+    ...(batchMetadataForm.location.trim() ? { location: batchMetadataForm.location } : {}),
+    ...(batchMetadataForm.takenAt.trim() ? { takenAt: batchMetadataForm.takenAt } : {}),
+    ...(batchMetadataForm.weather.trim() ? { weather: batchMetadataForm.weather } : {}),
+  };
+  if (Object.keys(input).length === 0) {
+    message.warning('请至少填写时间、地点、天气中的一项');
+    return;
+  }
+  batchMetadataSaving.value = true;
+  try {
+    const updates = await Promise.all(
+      selectedPhotoIds.value.map((photoId) => updatePhotoMetadataApi(photoId, input)),
+    );
+    const updatedById = new Map(updates.map((item) => [item.photoId, item]));
+    items.value = items.value.map((item) => updatedById.get(item.photoId) ?? item);
+    selectedRows.value = selectedRows.value.map((item) => updatedById.get(item.photoId) ?? item);
+    message.success(`已批量更新 ${updates.length} 张照片的展示信息`);
+    batchMetadataVisible.value = false;
+  } finally {
+    batchMetadataSaving.value = false;
   }
 }
 
@@ -318,6 +403,19 @@ async function refreshPhotoAi(record: PhotoCenterItem | Record<string, any>) {
     message.success('AI 重新识别任务已加入队列，可在 AI 进度中查看');
   } finally {
     aiRefreshingPhotoId.value = '';
+  }
+}
+
+async function backfillPendingPhotos() {
+  backfillLoading.value = true;
+  try {
+    const job = await createPhotoCenterBackfillJobApi();
+    aiTaskVisible.value = true;
+    lastBackfillFeedback.value = formatBackfillJobFeedback(job);
+    message.success(lastBackfillFeedback.value);
+    await loadPhotos();
+  } finally {
+    backfillLoading.value = false;
   }
 }
 
@@ -353,6 +451,7 @@ async function openAiDetail(record: PhotoCenterItem | Record<string, any>) {
     pageSize: 1,
   });
   aiDetailRecord.value = result.items.find((item) => item.photoId === photo.photoId) ?? photo;
+  fillPhotoEditForm(aiDetailRecord.value);
   aiDetailVisible.value = true;
 }
 
@@ -457,6 +556,18 @@ function resolvedNarrationVariants(record: PhotoCenterItem | Record<string, any>
   return resolveAiNarrationVariants(record as PhotoCenterItem);
 }
 
+function extractObservedWeather(record: Pick<PhotoCenterItem, 'aiDetail'>) {
+  if (!record.aiDetail.trim()) return '';
+  try {
+    const parsed = JSON.parse(record.aiDetail) as Record<string, any>;
+    const raw = parsed.raw && typeof parsed.raw === 'object' ? parsed.raw : parsed;
+    const weather = raw?.photo_analysis?.observed_meta?.weather;
+    return typeof weather === 'string' ? weather : '';
+  } catch {
+    return '';
+  }
+}
+
 async function selectPhotoNarration(
   record: PhotoCenterItem | Record<string, any>,
   value: unknown,
@@ -498,6 +609,39 @@ onMounted(loadPhotos);
 <template>
   <Page description="照片中心资产目录" title="照片列表">
     <Card class="mb-4" :body-style="{ paddingBottom: '12px' }">
+      <div class="photo-status-metrics">
+        <div class="photo-status-card">
+          <span>当前页照片</span>
+          <strong>{{ currentPageReadiness.totalCount }}</strong>
+        </div>
+        <div class="photo-status-card ready">
+          <span>可用于播放</span>
+          <strong>{{ currentPageReadiness.readyCount }}</strong>
+        </div>
+        <div class="photo-status-card pending">
+          <span>待处理</span>
+          <strong>{{ currentPageReadiness.pendingCount }}</strong>
+        </div>
+        <div class="photo-status-card failed">
+          <span>失败</span>
+          <strong>{{ currentPageReadiness.failedCount }}</strong>
+        </div>
+        <div class="photo-status-total">
+          <span>全库匹配</span>
+          <strong>{{ total }}</strong>
+        </div>
+      </div>
+
+      <Alert
+        v-if="lastBackfillFeedback"
+        closable
+        class="backfill-feedback"
+        :message="lastBackfillFeedback"
+        show-icon
+        type="success"
+        @close="clearLastBackfillFeedback"
+      />
+
       <Space wrap>
         <Input
           v-model:value="query.keyword"
@@ -527,6 +671,10 @@ onMounted(loadPhotos);
           :options="aiStatusOptions"
           placeholder="AI 旁白"
         />
+        <Button @click="applyAiStatusShortcut('score', 'pending')">识别待处理</Button>
+        <Button @click="applyAiStatusShortcut('comment', 'pending')">旁白待处理</Button>
+        <Button @click="applyAiStatusShortcut('score', 'failed')">识别失败</Button>
+        <Button @click="applyAiStatusShortcut('comment', 'failed')">旁白失败</Button>
         <Tag
           v-if="query.aiTag"
           class="active-filter-tag"
@@ -549,8 +697,14 @@ onMounted(loadPhotos);
         </div>
         <Space>
           <Button @click="aiTaskVisible = true">AI 进度</Button>
+          <Button :loading="backfillLoading" @click="backfillPendingPhotos">
+            补齐待处理
+          </Button>
           <Button :disabled="selectedPhotoCount === 0" @click="clearSelection">
             清空选择
+          </Button>
+          <Button :disabled="selectedPhotoCount === 0" @click="openBatchMetadataModal">
+            批量改展示信息
           </Button>
           <Button
             :disabled="selectedPhotoCount === 0"
@@ -792,12 +946,32 @@ onMounted(loadPhotos);
       <Space class="assignment-form" direction="vertical" size="middle">
         <Input v-model:value="photoEditForm.captionTitle" placeholder="照片名称" />
         <Input v-model:value="photoEditForm.importAlbumTitle" placeholder="导入相册" />
+        <Input v-model:value="photoEditForm.takenAt" placeholder="展示时间，例如 2026-06-16" />
+        <Input v-model:value="photoEditForm.location" placeholder="展示地点，例如 杭州西湖区" />
+        <Input v-model:value="photoEditForm.weather" placeholder="展示天气，例如 晴" />
         <Select
           v-model:value="photoEditForm.sourceAlbumKind"
           :options="sourceAlbumKindOptions"
           placeholder="来源类型"
         />
         <Input v-model:value="photoEditForm.sourceOwnerName" placeholder="来源账号/所有者" />
+      </Space>
+    </Modal>
+    <Modal
+      v-model:open="batchMetadataVisible"
+      :confirm-loading="batchMetadataSaving"
+      ok-text="批量保存"
+      title="批量修改展示信息"
+      width="520px"
+      @ok="submitBatchMetadata"
+    >
+      <Space class="assignment-form" direction="vertical" size="middle">
+        <div class="assignment-count">
+          将更新已选择的 <strong>{{ selectedPhotoCount }}</strong> 张照片；留空字段不会覆盖原值。
+        </div>
+        <Input v-model:value="batchMetadataForm.takenAt" placeholder="展示时间，例如 2026-06-16" />
+        <Input v-model:value="batchMetadataForm.location" placeholder="展示地点，例如 杭州西湖区" />
+        <Input v-model:value="batchMetadataForm.weather" placeholder="展示天气，例如 晴" />
       </Space>
     </Modal>
     <Modal
@@ -824,6 +998,21 @@ onMounted(loadPhotos);
           <strong>{{ aiDetailRecord.aiError || '-' }}</strong>
           <span>三段式旁白</span>
           <strong>{{ resolvedNarrationVariants(aiDetailRecord).length }} 组</strong>
+        </div>
+        <div class="ai-display-meta-editor">
+          <strong>展示信息</strong>
+          <div class="ai-display-meta-grid">
+            <Input v-model:value="photoEditForm.takenAt" placeholder="展示时间" />
+            <Input v-model:value="photoEditForm.location" placeholder="展示地点" />
+            <Input v-model:value="photoEditForm.weather" placeholder="展示天气" />
+            <Button
+              :loading="photoEditSaving"
+              type="primary"
+              @click="submitPhotoEdit"
+            >
+              保存展示信息
+            </Button>
+          </div>
         </div>
         <Button
           :loading="aiDetailSyncing"
@@ -860,6 +1049,51 @@ onMounted(loadPhotos);
 </template>
 
 <style scoped>
+.photo-status-metrics {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 150px));
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.photo-status-card,
+.photo-status-total {
+  display: grid;
+  gap: 4px;
+  padding: 10px 12px;
+  border: 1px solid rgb(148 163 184 / 22%);
+  border-radius: 8px;
+  background: rgb(15 23 42 / 3%);
+}
+
+.photo-status-card.ready {
+  border-color: rgb(34 197 94 / 30%);
+}
+
+.photo-status-card.pending {
+  border-color: rgb(245 158 11 / 35%);
+}
+
+.photo-status-card.failed {
+  border-color: rgb(239 68 68 / 32%);
+}
+
+.photo-status-card span,
+.photo-status-total span {
+  color: #64748b;
+  font-size: 12px;
+}
+
+.photo-status-card strong,
+.photo-status-total strong {
+  font-size: 20px;
+  line-height: 1.2;
+}
+
+.backfill-feedback {
+  margin-bottom: 12px;
+}
+
 .filter-keyword {
   width: 240px;
 }
@@ -1005,6 +1239,18 @@ onMounted(loadPhotos);
 
 .ai-detail-grid span {
   color: #64748b;
+}
+
+.ai-display-meta-editor {
+  display: grid;
+  gap: 8px;
+}
+
+.ai-display-meta-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr)) auto;
+  gap: 8px;
+  align-items: center;
 }
 
 .ai-detail-raw {

@@ -13,6 +13,8 @@ import {
   updateTvDeviceApi,
 } from '#/api/photo-library';
 
+import { getDeviceAlbumAuthorizationSummary } from '../playback-albums/playback-album-view';
+
 const loading = ref(false);
 const saving = ref(false);
 const modalVisible = ref(false);
@@ -32,12 +34,21 @@ const albumOptions = computed(() =>
     value: album.playbackAlbumId,
   })),
 );
+const enabledDeviceCount = computed(() =>
+  devices.value.filter((device) => device.enabled).length,
+);
+const allAlbumPolicyDeviceCount = computed(
+  () =>
+    devices.value.filter(
+      (device) => device.enabled && device.authorizedPlaybackAlbumIds.length === 0,
+    ).length,
+);
 
 const columns = [
   { dataIndex: 'deviceName', key: 'deviceName', title: '设备' },
   { dataIndex: 'groupName', key: 'groupName', title: '分组', width: 140 },
   { dataIndex: 'enabled', key: 'enabled', title: '状态', width: 100 },
-  { dataIndex: 'authorizedPlaybackAlbumIds', key: 'albums', title: '授权相册', width: 180 },
+  { dataIndex: 'authorizedPlaybackAlbumIds', key: 'albums', title: '授权相册', width: 240 },
   { dataIndex: 'lastLoginAt', key: 'lastLoginAt', title: '最后登录', width: 200 },
   { dataIndex: 'actions', key: 'actions', title: '操作', width: 100 },
 ];
@@ -90,11 +101,30 @@ function rowKey(record: TvDevice) {
   return record.deviceId;
 }
 
+function albumAuthorizationSummary(record: TvDevice | Record<string, any>) {
+  return getDeviceAlbumAuthorizationSummary(record as TvDevice, albums.value);
+}
+
 onMounted(loadData);
 </script>
 
 <template>
   <Page description="管理 TV 设备分组和播放相册授权" title="设备中心">
+    <div class="device-metrics">
+      <Card size="small">
+        <span>设备</span>
+        <strong>{{ devices.length }}</strong>
+      </Card>
+      <Card size="small">
+        <span>启用设备</span>
+        <strong>{{ enabledDeviceCount }}</strong>
+      </Card>
+      <Card size="small">
+        <span>全部相册权限</span>
+        <strong>{{ allAlbumPolicyDeviceCount }}</strong>
+      </Card>
+    </div>
+
     <Card>
       <div class="device-toolbar">
         <Button :loading="loading" @click="loadData">刷新</Button>
@@ -127,7 +157,12 @@ onMounted(loadData);
           </template>
 
           <template v-else-if="column.key === 'albums'">
-            <Tag color="blue">{{ record.authorizedPlaybackAlbumIds.length }} 个</Tag>
+            <div class="album-auth-cell">
+              <Tag :color="albumAuthorizationSummary(record).color">
+                {{ albumAuthorizationSummary(record).label }}
+              </Tag>
+              <span>{{ albumAuthorizationSummary(record).description }}</span>
+            </div>
           </template>
 
           <template v-else-if="column.key === 'lastLoginAt'">
@@ -160,16 +195,8 @@ onMounted(loadData);
           </label>
         </div>
         <label>
-          <span>设备名称</span>
-          <Input v-model:value="form.deviceName" />
-        </label>
-        <label>
           <span>分组</span>
           <Input v-model:value="form.groupName" placeholder="客厅、卧室、父母家" />
-        </label>
-        <label>
-          <span>启用</span>
-          <Switch v-model:checked="form.enabled" />
         </label>
         <label>
           <span>可观看播放相册</span>
@@ -177,7 +204,7 @@ onMounted(loadData);
             v-model:value="form.authorizedPlaybackAlbumIds"
             mode="multiple"
             :options="albumOptions"
-            placeholder="选择授权给该设备的播放相册"
+            placeholder="不选择时默认可观看全部播放相册"
           />
         </label>
       </div>
@@ -186,6 +213,30 @@ onMounted(loadData);
 </template>
 
 <style scoped>
+.device-metrics {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 180px));
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.device-metrics :deep(.ant-card-body) {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 12px 14px;
+}
+
+.device-metrics span {
+  color: #64748b;
+  font-size: 12px;
+}
+
+.device-metrics strong {
+  font-size: 22px;
+  line-height: 1.2;
+}
+
 .device-toolbar {
   display: flex;
   justify-content: flex-end;
@@ -199,9 +250,18 @@ onMounted(loadData);
   gap: 6px;
 }
 
-.device-form > label:nth-of-type(1),
-.device-form > label:nth-of-type(3) {
-  display: none;
+.album-auth-cell {
+  display: grid;
+  gap: 4px;
+}
+
+.album-auth-cell span {
+  overflow: hidden;
+  color: #64748b;
+  font-size: 12px;
+  line-height: 1.35;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .device-form-row {

@@ -1,5 +1,5 @@
-import { Injectable, OnModuleDestroy } from '@nestjs/common';
-import { createHash } from 'node:crypto';
+import { Injectable, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
+import { createHash, createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
 import {
   existsSync,
   mkdirSync,
@@ -25,8 +25,10 @@ import type {
   PhotoCenterItem,
   PhotoCenterListQuery,
   PhotoCenterListResponse,
+  PhotoCenterSourceType,
   PhotoAiInsightInput,
   PlaybackAlbum,
+  RecoverInterruptedAiRecognitionTasksResult,
   RemovePlaybackAlbumPhotoResult,
   TrashPhotoResult,
   TvDevice,
@@ -80,6 +82,7 @@ import type {
 
 const bindSessionTtlMs = 10 * 60 * 1000;
 const bindSessions = new Map<string, DeviceBindSessionResponse>();
+const photoAssetTokenTtlMs = 6 * 60 * 60 * 1000;
 const maxConcurrentVisionAiRequests = 3;
 const visionAiRequestTimeoutMs = 90_000;
 let lastPhotoScanJob: PhotoScanJob | undefined;
@@ -125,6 +128,17 @@ export interface PlaybackAlbumAiJobResult {
 
 export interface PlaybackAlbumScanJobResult extends PlaybackAlbumAiJobResult {
   transcodedPhotoCount: number;
+}
+
+export interface PhotoCenterBackfillJobInput {
+  jobId?: string;
+  limit?: number;
+  sourceType?: PhotoCenterSourceType;
+}
+
+export interface PhotoCenterBackfillJobResult extends PlaybackAlbumScanJobResult {
+  failedPhotoCount: number;
+  targetPhotoCount: number;
 }
 
 export interface PlaybackAlbumAiSchedulerAlbumResult {
@@ -334,7 +348,7 @@ const emptyDemoAlbum: AlbumSummary = {
 };
 
 @Injectable()
-export class AppService implements OnModuleDestroy {
+export class AppService implements OnModuleDestroy, OnModuleInit {
   private aiSchedulerRunning = false;
   private aiSchedulerTimer?: ReturnType<typeof setTimeout>;
   private readonly aiRetryAttempts = new Map<string, number>();
@@ -348,6 +362,10 @@ export class AppService implements OnModuleDestroy {
   private photoSources: PhotoSourceRegistry = createDefaultPhotoSourceRegistry();
   private readonly visionAiWaitQueue: Array<() => void> = [];
   private visionAi: UnifiedVisionAiAdapter = new OpenAiCompatibleUnifiedVisionAiAdapter();
+
+  onModuleInit(): void {
+    this.recoverInterruptedAiRecognitionTasks();
+  }
 
   onModuleDestroy(): void {
     this.close();
@@ -369,6 +387,37 @@ export class AppService implements OnModuleDestroy {
       this.visionAiWaitQueue.shift()?.();
     }
     this.photoSources.close();
+  }
+
+  authenticateAdmin(input: DeviceLoginInput): string | null {
+    const username = input.username.trim().toLowerCase();
+    const adminPassword = getAdminPassword();
+    if (
+      !adminPassword ||
+      username !== getAdminUsername() ||
+      input.password !== adminPassword
+    ) {
+      return null;
+    }
+    return createAdminAccessToken(username);
+  }
+
+  refreshAdminToken(authorizationHeader?: string): string | null {
+    const payload = verifyAdminAccessToken(
+      normalizeDeviceToken(undefined, authorizationHeader),
+    );
+    return payload ? createAdminAccessToken(payload.sub) : null;
+  }
+
+  validateAdminToken(authorizationHeader?: string): boolean {
+    const token = normalizeDeviceToken(undefined, authorizationHeader);
+    if (!token) return false;
+    const payload = verifyAdminAccessToken(token);
+    return payload?.sub === getAdminUsername();
+  }
+
+  validatePhotoAssetToken(path: string, token?: string): boolean {
+    return verifyPhotoAssetToken(path, token);
   }
 
   replacePhotoRepositoryForTesting(photoRepository: SqlitePhotoRepository): void {
@@ -393,6 +442,10 @@ export class AppService implements OnModuleDestroy {
 
   clearAiRecognitionTasks(): ClearAiRecognitionTasksResult {
     return this.getSqliteSource().repository.clearAiRecognitionTasks();
+  }
+
+  recoverInterruptedAiRecognitionTasks(): RecoverInterruptedAiRecognitionTasksResult {
+    return this.getSqliteSource().repository.recoverInterruptedAiRecognitionTasks();
   }
 
   private createAiRecognitionTask(input: {
@@ -454,18 +507,29 @@ export class AppService implements OnModuleDestroy {
   }
 
   authenticateDevice(input: DeviceLoginInput): DeviceLoginResponse | null {
-    if (input.username.trim() !== 'admin' || input.password !== 'admin123') {
+    const normalizedUsername = input.username.trim().toLowerCase();
+    const adminPassword = getAdminPassword();
+    if (
+      !adminPassword ||
+      normalizedUsername !== getAdminUsername() ||
+      input.password !== adminPassword
+    ) {
       return null;
     }
 
-    const normalizedUsername = input.username.trim().toLowerCase();
     const deviceUniqueId = normalizeDeviceUniqueId(
       input.deviceUniqueId || normalizedUsername,
     );
     const deviceId = `tv_${deviceUniqueId}`;
-    const deviceToken = createLoginDeviceToken(normalizedUsername, deviceUniqueId);
     const device = (() => {
       try {
+        const existingDevice = this.getSqliteSource().repository
+          .listTvDevices()
+          .find((candidate) => (
+            candidate.deviceId === deviceId ||
+            candidate.deviceUniqueId === deviceUniqueId
+          ));
+        const deviceToken = existingDevice?.deviceToken?.trim() || createRandomDeviceToken();
         return this.getSqliteSource().repository.upsertTvDevice({
           appVersion: input.appVersion,
           deviceId,
@@ -478,7 +542,7 @@ export class AppService implements OnModuleDestroy {
         return {
           deviceId: `tv_${normalizedUsername}`,
           deviceName: input.deviceName || '测试电视',
-          deviceToken: createLoginDeviceToken(normalizedUsername),
+          deviceToken: createRandomDeviceToken(),
         };
       }
     })();
@@ -495,8 +559,6 @@ export class AppService implements OnModuleDestroy {
   ): boolean {
     const token = normalizeDeviceToken(deviceToken, authorizationHeader);
     if (!token) return false;
-
-    if (token === createLoginDeviceToken('admin')) return true;
 
     try {
       const device = this.getSqliteSource().repository.getTvDeviceByToken(token);
@@ -582,7 +644,7 @@ export class AppService implements OnModuleDestroy {
       name: 'wangri-zhongxian-backend',
       status: 'ok',
       timestamp: new Date().toISOString(),
-      version: '0.1.0',
+      version: '2.0.2',
     };
   }
 
@@ -703,23 +765,23 @@ export class AppService implements OnModuleDestroy {
     const authorizedDevice = this.resolveAuthorizedDevice(deviceToken, authorizationHeader);
     const playbackAlbums = this.listDevicePlaybackAlbums(deviceToken, authorizationHeader);
     if (authorizedDevice && authorizedDevice.authorizedPlaybackAlbumIds.length > 0) {
-      return {
+      return this.signPhotoAssetUrls({
         albums: playbackAlbums,
         total: playbackAlbums.length,
-      };
+      });
     }
     const albums = this.getPhotoSources().getActiveSource().listAlbums();
     if (isPromiseLike(albums)) {
-      return albums.then((resolvedAlbums) => ({
+      return albums.then((resolvedAlbums) => this.signPhotoAssetUrls({
         albums: [...playbackAlbums, ...resolvedAlbums],
         total: playbackAlbums.length + resolvedAlbums.length,
       }));
     }
 
-    return {
+    return this.signPhotoAssetUrls({
       albums: [...playbackAlbums, ...albums],
       total: playbackAlbums.length + albums.length,
-    };
+    });
   }
 
   getAlbum(
@@ -730,10 +792,10 @@ export class AppService implements OnModuleDestroy {
   ): MaybePromise<AlbumDetailResponse | null> {
     const scenario = resolveDemoScenario(demoScenario);
     if (scenario === 'empty-playlist' && albumId === emptyDemoAlbum.albumId) {
-      return {
+      return this.signPhotoAssetUrls({
         ...emptyDemoAlbum,
         items: [],
-      };
+      });
     }
 
     const playbackAlbum = this.getDevicePlaybackAlbumDetail(
@@ -741,9 +803,12 @@ export class AppService implements OnModuleDestroy {
       deviceToken,
       authorizationHeader,
     );
-    if (playbackAlbum) return playbackAlbum;
+    if (playbackAlbum) return this.signPhotoAssetUrls(playbackAlbum);
 
-    return this.getPhotoSources().getActiveSource().getAlbum(albumId);
+    const album = this.getPhotoSources().getActiveSource().getAlbum(albumId);
+    return isPromiseLike(album)
+      ? album.then((resolvedAlbum) => this.signPhotoAssetUrls(resolvedAlbum))
+      : this.signPhotoAssetUrls(album);
   }
 
   getPlaylist(
@@ -755,11 +820,11 @@ export class AppService implements OnModuleDestroy {
   ): MaybePromise<PlaylistResponse> {
     const scenario = resolveDemoScenario(demoScenario);
     if (scenario === 'empty-albums' || scenario === 'empty-playlist') {
-      return {
+      return this.signPhotoAssetUrls({
         items: [],
         playlistId: albumId ? `pl_demo_${albumId}` : 'pl_demo_empty',
         policyVersion: 1,
-      };
+      });
     }
 
     const playbackItems = this.listDevicePlaybackAlbumItems(
@@ -768,15 +833,17 @@ export class AppService implements OnModuleDestroy {
       authorizationHeader,
     );
     if (playbackItems) {
-      return buildPlaylistResponse(playbackItems, limit, albumId);
+      return this.signPhotoAssetUrls(buildPlaylistResponse(playbackItems, limit, albumId));
     }
 
     const sourceItems = this.getPhotoSources().getActiveSource().listPlaylistItems(albumId);
     if (isPromiseLike(sourceItems)) {
-      return sourceItems.then((items) => buildPlaylistResponse(items, limit, albumId));
+      return sourceItems.then((items) =>
+        this.signPhotoAssetUrls(buildPlaylistResponse(items, limit, albumId)),
+      );
     }
 
-    return buildPlaylistResponse(sourceItems, limit, albumId);
+    return this.signPhotoAssetUrls(buildPlaylistResponse(sourceItems, limit, albumId));
   }
 
   private resolveAuthorizedDevice(
@@ -784,7 +851,7 @@ export class AppService implements OnModuleDestroy {
     authorizationHeader?: string,
   ): TvDevice | null {
     const token = normalizeDeviceToken(deviceToken, authorizationHeader);
-    if (!token || token === createLoginDeviceToken('admin')) return null;
+    if (!token) return null;
     return this.getSqliteSource().repository.getTvDeviceByToken(token);
   }
 
@@ -943,18 +1010,25 @@ export class AppService implements OnModuleDestroy {
       sourceType: query.sourceType === 'feiniu' ? 'feiniu' : query.sourceType === 'local' ? 'local' : undefined,
     };
     const sqliteSource = this.getSqliteSource();
-    return sqliteSource.repository.listPhotoCenterItems(listQuery);
+    const response = sqliteSource.repository.listPhotoCenterItems(listQuery);
+    return isPromiseLike(response)
+      ? response.then((resolvedResponse) => this.signPhotoAssetUrls(resolvedResponse))
+      : this.signPhotoAssetUrls(response);
   }
 
   createPlaybackAlbum(input: CreatePlaybackAlbumInput): PlaybackAlbum {
-    return this.getSqliteSource().repository.createPlaybackAlbum(input);
+    return this.signPhotoAssetUrls(
+      this.getSqliteSource().repository.createPlaybackAlbum(input),
+    );
   }
 
   updatePlaybackAlbum(
     playbackAlbumId: string,
     input: UpdatePlaybackAlbumInput,
   ): PlaybackAlbum {
-    return this.getSqliteSource().repository.updatePlaybackAlbum(playbackAlbumId, input);
+    return this.signPhotoAssetUrls(
+      this.getSqliteSource().repository.updatePlaybackAlbum(playbackAlbumId, input),
+    );
   }
 
   deletePlaybackAlbum(playbackAlbumId: string): DeletePlaybackAlbumResult {
@@ -976,22 +1050,25 @@ export class AppService implements OnModuleDestroy {
     const mountedAlbums = albums.filter(
       (album) => album.sourceType === 'feiniu_album' && album.sourceAlbumId,
     );
-    if (mountedAlbums.length === 0) return albums;
+    if (mountedAlbums.length === 0) return this.signPhotoAssetUrls(albums);
 
     const sourceAlbums = this.listFeiniuAlbumsForCuration();
     const enrichAlbums = (items: AlbumSummary[]) => {
       const sourceAlbumsById = new Map(items.map((item) => [item.albumId, item]));
-      return albums.map((album) => {
+      const enrichedAlbums = albums.map((album) => {
         if (album.sourceType !== 'feiniu_album' || !album.sourceAlbumId) return album;
         const sourceAlbum = sourceAlbumsById.get(album.sourceAlbumId);
         if (!sourceAlbum) return album;
         return {
           ...album,
+          coverImageUrl: album.coverImageUrl || sourceAlbum.coverImageUrl,
           coverPhotoId: album.coverPhotoId || sourceAlbum.coverPhotoId,
           photoCount: album.photoCount + sourceAlbum.photoCount,
           sourceAlbumTitle: album.sourceAlbumTitle || sourceAlbum.title,
+          thumbnailUrl: album.thumbnailUrl || sourceAlbum.thumbnailUrl,
         };
       });
+      return this.signPhotoAssetUrls(enrichedAlbums);
     };
 
     return isPromiseLike(sourceAlbums)
@@ -1099,7 +1176,7 @@ export class AppService implements OnModuleDestroy {
       playbackAlbum.sourceType !== 'feiniu_album' ||
       !playbackAlbum.sourceAlbumId
     ) {
-      return localItems;
+      return this.signPhotoAssetUrls(localItems);
     }
 
     const persistedSourceItems = repository.listPhotoCenterAlbumItems(
@@ -1133,8 +1210,8 @@ export class AppService implements OnModuleDestroy {
     };
 
     return isPromiseLike(sourceItems)
-      ? sourceItems.then(mergeItems)
-      : mergeItems(sourceItems);
+      ? sourceItems.then((items) => this.signPhotoAssetUrls(mergeItems(items)))
+      : this.signPhotoAssetUrls(mergeItems(sourceItems));
   }
 
   removePhotoFromPlaybackAlbum(
@@ -1150,14 +1227,18 @@ export class AppService implements OnModuleDestroy {
     photoId: string,
     input: UpdatePhotoAiCommentInput,
   ): PhotoCenterItem {
-    return this.getSqliteSource().repository.updatePhotoAiComment(photoId, input);
+    return this.signPhotoAssetUrls(
+      this.getSqliteSource().repository.updatePhotoAiComment(photoId, input),
+    );
   }
 
   updatePhotoAiInsight(
     photoId: string,
     input: UpdatePhotoAiInsightInput,
   ): PhotoCenterItem {
-    return this.getSqliteSource().repository.updatePhotoAiInsight(photoId, input);
+    return this.signPhotoAssetUrls(
+      this.getSqliteSource().repository.updatePhotoAiInsight(photoId, input),
+    );
   }
 
   syncPhotoAiDetail(photoId: string): PhotoCenterItem {
@@ -1181,18 +1262,24 @@ export class AppService implements OnModuleDestroy {
       },
     ]);
 
-    return repository.listPhotoCenterItems({
+    return this.signPhotoAssetUrls(repository.listPhotoCenterItems({
       keyword: normalizedPhotoId,
       page: 1,
       pageSize: 100,
-    }).items.find((candidate) => candidate.photoId === normalizedPhotoId) ?? item;
+    }).items.find((candidate) => candidate.photoId === normalizedPhotoId) ?? item);
   }
 
   updatePhotoMetadata(
     photoId: string,
     input: UpdatePhotoMetadataInput,
   ): PhotoCenterItem {
-    return this.getSqliteSource().repository.updatePhotoMetadata(photoId, input);
+    return this.signPhotoAssetUrls(
+      this.getSqliteSource().repository.updatePhotoMetadata(photoId, input),
+    );
+  }
+
+  private signPhotoAssetUrls<T>(value: T): T {
+    return signPhotoAssetUrls(value);
   }
 
   trashPhoto(photoId: string): TrashPhotoResult {
@@ -1308,6 +1395,143 @@ export class AppService implements OnModuleDestroy {
       startedAt,
       status: 'completed',
     };
+  }
+
+  async createPhotoCenterBackfillJob(
+    input: PhotoCenterBackfillJobInput = {},
+  ): Promise<PhotoCenterBackfillJobResult> {
+    const repository = this.getSqliteSource().repository;
+    const startedAt = new Date().toISOString();
+    const aiSettings = repository.getAiRuntimeSettings();
+    const targets = this.listPhotoCenterBackfillTargets(repository, input);
+    const task = this.createAiRecognitionTask({
+      albumId: 'photo-center',
+      albumTitle: '照片中心',
+      jobId: input.jobId,
+      requestedPhotoCount: targets.length,
+      targetId: 'photo-center-backfill',
+      targetTitle: '照片中心补齐',
+      targetType: 'backfill',
+    });
+    this.updateAiRecognitionTask(task.jobId, {
+      status: targets.length > 0 ? 'running' : 'completed',
+    });
+
+    let completedPhotoCount = 0;
+    let failedPhotoCount = 0;
+    let generatedPhotoCount = 0;
+    let skippedPhotoCount = 0;
+    let transcodedPhotoCount = 0;
+
+    for (const item of targets) {
+      this.updateAiRecognitionTask(task.jobId, {
+        activePhotoId: item.photoId,
+        activePhotoName: item.filename,
+      });
+      try {
+        const beforeReady = repository.hasCurrentTvBlurFillDerivative(item.photoId);
+        const derivative = await this.ensurePhotoDerivativesForAiTarget(
+          repository,
+          item,
+        );
+        if (
+          !beforeReady &&
+          derivative.derivativeStatus === 'ready' &&
+          repository.hasCurrentTvBlurFillDerivative(item.photoId)
+        ) {
+          transcodedPhotoCount += 1;
+        }
+
+        if (shouldBackfillPhotoAi(item)) {
+          const playbackAlbum = this.resolveAiAlbumForPhoto(repository, item);
+          const insight = await this.analyzePhotoAiTarget(
+            repository,
+            item,
+            playbackAlbum,
+            derivative,
+            aiSettings,
+            true,
+            false,
+          );
+          if (insight) {
+            const result = repository.applyPhotoAiInsights([
+              {
+                ...insight,
+                photoId: item.photoId,
+              },
+            ]);
+            generatedPhotoCount += result.generatedPhotoCount;
+          } else {
+            skippedPhotoCount += 1;
+          }
+        }
+
+        completedPhotoCount += 1;
+        this.updateAiRecognitionTask(task.jobId, {
+          completedPhotoCount,
+          failedPhotoCount,
+          skippedPhotoCount,
+        });
+      } catch (error) {
+        failedPhotoCount += 1;
+        this.updateAiRecognitionTask(task.jobId, {
+          error: error instanceof Error ? error.message : String(error),
+          failedPhotoCount,
+        });
+      }
+    }
+
+    this.finishAiRecognitionTask(task.jobId, {
+      completedPhotoCount,
+      failedPhotoCount,
+      skippedPhotoCount,
+      status: failedPhotoCount > 0 ? 'failed' : 'completed',
+    });
+
+    return {
+      failedPhotoCount,
+      finishedAt: new Date().toISOString(),
+      generatedPhotoCount,
+      importedSourcePhotoCount: 0,
+      jobId: task.jobId,
+      requestedPhotoCount: targets.length,
+      skippedPhotoCount,
+      startedAt,
+      status: 'completed',
+      targetPhotoCount: targets.length,
+      transcodedPhotoCount,
+    };
+  }
+
+  private listPhotoCenterBackfillTargets(
+    repository: SqlitePhotoRepository,
+    input: PhotoCenterBackfillJobInput,
+  ): PhotoCenterItem[] {
+    const pageSize = 100;
+    const targets: PhotoCenterItem[] = [];
+    const maxTargets =
+      typeof input.limit === 'number' && Number.isFinite(input.limit)
+        ? Math.max(Math.floor(input.limit), 0)
+        : Number.POSITIVE_INFINITY;
+    let page = 1;
+    let total = Number.POSITIVE_INFINITY;
+
+    while ((page - 1) * pageSize < total && targets.length < maxTargets) {
+      const response = repository.listPhotoCenterItems({
+        page,
+        pageSize,
+        sourceType: input.sourceType,
+      });
+      total = response.total;
+      for (const item of response.items) {
+        if (!shouldBackfillPhoto(item)) continue;
+        targets.push(item);
+        if (targets.length >= maxTargets) break;
+      }
+      page += 1;
+    }
+
+    return targets;
   }
 
   private runPlaybackAlbumAiJob(
@@ -1679,6 +1903,7 @@ export class AppService implements OnModuleDestroy {
       aiPriorityTags: [],
       aiRepeatIntervalMinutes: 1440,
       aiScoreThreshold: 80,
+      coverImageUrl: item.thumbnailUrl,
       coverPhotoId: item.photoId,
       createdAt: '',
       description: '',
@@ -1694,6 +1919,7 @@ export class AppService implements OnModuleDestroy {
       sourceAlbumTitle: item.importAlbumTitle || item.albumName,
       sourceType: item.sourceType === 'feiniu' ? 'feiniu_album' : 'manual',
       title: item.importAlbumTitle || item.albumName || '单张照片刷新',
+      thumbnailUrl: item.thumbnailUrl,
       updatedAt: '',
     };
   }
@@ -2665,7 +2891,7 @@ function buildFiveNarrationVariantsPrompt(): string {
     '每组对象格式：{"scene_description":"...","handwritten_thought":"...","lyrical_closure":"..."}。',
     'scene_description：8-16 个中文字符，客观、具体，只写真实可见的人物、动作、物件、光线、颜色或环境，不编造关系和故事。',
     'handwritten_thought：12-25 个中文字符，是最打动人的一句，适合手写体；温暖克制、生活化，可有轻微诗意，不要过度煽情。',
-    'lyrical_closure：不超过 8 个中文字符，轻轻收住情绪；不要广告语、鸡汤文或祝福语，少用“幸福、感动、美好、珍贵、永远”。',
+    'lyrical_closure：不超过 10 个中文字符，轻轻收住情绪；不要广告语、鸡汤文或祝福语，少用“幸福、感动、美好、珍贵、永远”。',
     '5 组分别从具体物件、人物动作、现场氛围、日后回忆、诗意总结等角度生成，不要重复同一种表达。',
     '不要把文件名、相册名、评分、分类过程写进旁白。',
   ].join('\n');
@@ -3044,7 +3270,7 @@ function normalizeNarrationVariants(value: unknown): Array<{
         candidate.lyrical_closure ??
         candidate.closing_line ??
         candidate.lyricalClosure,
-        8,
+        10,
       ),
       sceneDescription: normalizeNarrationPart(
         candidate.scene_description ??
@@ -3301,6 +3527,15 @@ function isPlaybackAlbumAiDue(album: PlaybackAlbum, now: Date): boolean {
     Math.max(album.aiRepeatIntervalMinutes, 1) * 60 * 1000;
 }
 
+function shouldBackfillPhoto(item: PhotoCenterItem): boolean {
+  return item.derivativeStatus !== 'ready' || shouldBackfillPhotoAi(item);
+}
+
+function shouldBackfillPhotoAi(item: PhotoCenterItem): boolean {
+  if (item.aiLocked) return false;
+  return item.aiScoreStatus !== 'completed' || item.aiCommentStatus !== 'completed';
+}
+
 function resolvePlaybackAlbumDailyAiLimit(
   album: PlaybackAlbum,
   settings: AiRuntimeSettings,
@@ -3396,14 +3631,172 @@ function normalizeBindCode(bindCode: string): string {
   return bindCode.trim().toUpperCase();
 }
 
-function createLoginDeviceToken(username: string, deviceUniqueId?: string): string {
-  const normalizedUsername = username.trim().toLowerCase();
-  const normalizedDeviceUniqueId = deviceUniqueId
-    ? normalizeDeviceUniqueId(deviceUniqueId)
-    : '';
-  return normalizedDeviceUniqueId
-    ? `dt_login_${normalizedUsername}_${normalizedDeviceUniqueId}`
-    : `dt_login_${normalizedUsername}`;
+interface AdminAccessTokenPayload {
+  exp: number;
+  iat: number;
+  sub: string;
+}
+
+function createAdminAccessToken(username: string): string {
+  const nowSeconds = Math.floor(Date.now() / 1000);
+  const payload: AdminAccessTokenPayload = {
+    exp: nowSeconds + 30 * 24 * 60 * 60,
+    iat: nowSeconds,
+    sub: username.trim().toLowerCase(),
+  };
+  const encodedPayload = base64UrlEncode(JSON.stringify(payload));
+  return `wrjdyk_admin.${encodedPayload}.${signAdminAccessPayload(encodedPayload)}`;
+}
+
+function verifyAdminAccessToken(token: string): AdminAccessTokenPayload | null {
+  if (!token.startsWith('wrjdyk_admin.')) return null;
+  const [, encodedPayload, signature] = token.split('.', 3);
+  if (!encodedPayload || !signature) return null;
+  if (!constantTimeEquals(signature, signAdminAccessPayload(encodedPayload))) {
+    return null;
+  }
+
+  try {
+    const payload = JSON.parse(base64UrlDecode(encodedPayload)) as Partial<AdminAccessTokenPayload>;
+    if (payload.sub !== getAdminUsername()) return null;
+    if (!Number.isFinite(payload.exp) || payload.exp! <= Math.floor(Date.now() / 1000)) {
+      return null;
+    }
+    if (!Number.isFinite(payload.iat)) return null;
+    return {
+      exp: payload.exp!,
+      iat: payload.iat!,
+      sub: payload.sub,
+    };
+  } catch {
+    return null;
+  }
+}
+
+function createPhotoAssetToken(path: string): string {
+  const normalizedPath = normalizePhotoAssetTokenPath(path);
+  const expiresAt = Date.now() + photoAssetTokenTtlMs;
+  const expiresAtSeconds = Math.floor(expiresAt / 1000);
+  return `${expiresAtSeconds}.${signPhotoAssetPayload(normalizedPath, expiresAtSeconds)}`;
+}
+
+function verifyPhotoAssetToken(path: string, token?: string): boolean {
+  if (!token) return false;
+  const [expiresAtText, signature] = token.split('.', 2);
+  const expiresAtSeconds = Number(expiresAtText);
+  if (!Number.isFinite(expiresAtSeconds) || !signature) return false;
+  if (expiresAtSeconds <= Math.floor(Date.now() / 1000)) return false;
+
+  const expected = signPhotoAssetPayload(
+    normalizePhotoAssetTokenPath(path),
+    expiresAtSeconds,
+  );
+  return constantTimeEquals(signature, expected);
+}
+
+function signPhotoAssetPayload(path: string, expiresAtSeconds: number): string {
+  return createHmac('sha256', getAdminTokenSecret())
+    .update(`${path}.${expiresAtSeconds}`)
+    .digest('base64url');
+}
+
+function signPhotoAssetUrls<T>(value: T): T {
+  if (typeof value === 'string') {
+    return signPhotoAssetUrl(value) as T;
+  }
+  if (!value || typeof value !== 'object') return value;
+  if (Array.isArray(value)) {
+    return value.map((item) => signPhotoAssetUrls(item)) as T;
+  }
+
+  return Object.fromEntries(
+    Object.entries(value).map(([key, entry]) => [
+      key,
+      signPhotoAssetUrls(entry),
+    ]),
+  ) as T;
+}
+
+function signPhotoAssetUrl(url: string): string {
+  if (!isPhotoAssetUrl(url)) return url;
+
+  const parsed = new URL(url, 'http://wrjdyk.local');
+  parsed.searchParams.set('assetToken', createPhotoAssetToken(parsed.pathname));
+  const signedPath = `${parsed.pathname}${parsed.search}`;
+
+  if (/^https?:\/\//i.test(url)) {
+    return `${parsed.origin}${signedPath}`;
+  }
+  return signedPath;
+}
+
+function isPhotoAssetUrl(url: string): boolean {
+  if (!url) return false;
+  try {
+    const parsed = new URL(url, 'http://wrjdyk.local');
+    const path = normalizePhotoAssetTokenPath(parsed.pathname);
+    return path.startsWith('/photos/') || path.startsWith('/derivatives/');
+  } catch {
+    return false;
+  }
+}
+
+function normalizePhotoAssetTokenPath(path: string): string {
+  const onlyPath = path.split('?', 1)[0] || '/';
+  const normalized = onlyPath.startsWith('/') ? onlyPath : `/${onlyPath}`;
+  return normalized.startsWith('/api/')
+    ? normalized.slice('/api'.length)
+    : normalized;
+}
+
+function signAdminAccessPayload(encodedPayload: string): string {
+  return createHmac('sha256', getAdminTokenSecret())
+    .update(encodedPayload)
+    .digest('base64url');
+}
+
+function base64UrlEncode(value: string): string {
+  return Buffer.from(value, 'utf8').toString('base64url');
+}
+
+function base64UrlDecode(value: string): string {
+  return Buffer.from(value, 'base64url').toString('utf8');
+}
+
+function constantTimeEquals(left: string, right: string): boolean {
+  const leftBuffer = Buffer.from(left);
+  const rightBuffer = Buffer.from(right);
+  return (
+    leftBuffer.length === rightBuffer.length &&
+    timingSafeEqual(leftBuffer, rightBuffer)
+  );
+}
+
+function getAdminUsername(): string {
+  return process.env.WRJDYK_ADMIN_USERNAME?.trim().toLowerCase() || 'admin';
+}
+
+function getAdminPassword(): string | null {
+  const configuredPassword = process.env.WRJDYK_ADMIN_PASSWORD?.trim();
+  if (configuredPassword) return configuredPassword;
+  if (isProductionRuntime()) return null;
+  return 'admin123';
+}
+
+function getAdminTokenSecret(): string {
+  return (
+    process.env.WRJDYK_AUTH_SECRET?.trim() ||
+    process.env.WRJDYK_ADMIN_PASSWORD?.trim() ||
+    'wrjdyk-local-admin-token-secret'
+  );
+}
+
+function isProductionRuntime(): boolean {
+  return process.env.NODE_ENV?.trim().toLowerCase() === 'production';
+}
+
+function createRandomDeviceToken(): string {
+  return `dt_${randomBytes(24).toString('hex')}`;
 }
 
 function normalizeDeviceUniqueId(value: string): string {

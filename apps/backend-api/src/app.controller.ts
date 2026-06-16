@@ -37,6 +37,7 @@ import type {
   PlaylistResponse,
 } from '@wrjdyk/shared';
 import { AppService } from './app.service';
+import type { PhotoCenterBackfillJobInput } from './app.service';
 import type { FeiniuConnectivityInput } from './photo-sources/feiniu/feiniu-config';
 import { isPromiseLike } from './photo-sources/photo-source';
 import type {
@@ -170,22 +171,25 @@ export class AppController {
 
   @Post('auth/login')
   loginAdmin(@Body() input: DeviceLoginInput) {
-    const result = this.appService.authenticateDevice(input);
-    if (!result) throw new UnauthorizedException('Invalid username or password');
+    const accessToken = this.appService.authenticateAdmin(input);
+    if (!accessToken) throw new UnauthorizedException('Invalid username or password');
 
     return {
       code: 0,
       data: {
-        accessToken: `wrjdyk_admin_${input.username.trim().toLowerCase()}`,
+        accessToken,
       },
     };
   }
 
   @Post('auth/refresh')
-  refreshAdminToken() {
+  refreshAdminToken(@Headers('authorization') authorization?: string) {
+    const accessToken = this.appService.refreshAdminToken(authorization);
+    if (!accessToken) throw new UnauthorizedException('Invalid admin token');
+
     return {
       code: 0,
-      data: 'wrjdyk_admin_admin',
+      data: accessToken,
     };
   }
 
@@ -517,6 +521,39 @@ export class AppController {
     return {
       code: 0,
       data: this.appService.clearAiRecognitionTasks(),
+    };
+  }
+
+  @Post('admin/photo-library/backfill-jobs')
+  createAdminPhotoCenterBackfillJob(
+    @Body() input: PhotoCenterBackfillJobInput = {},
+  ) {
+    const startedAt = new Date().toISOString();
+    const jobId = `backfill_${Date.now().toString(36)}`;
+    void this.appService.createPhotoCenterBackfillJob({
+      ...input,
+      jobId,
+    }).catch((error) => {
+      console.warn('photo-center-backfill-job failed', {
+        error: error instanceof Error ? error.message : String(error),
+        jobId,
+      });
+    });
+    return {
+      code: 0,
+      data: {
+        failedPhotoCount: 0,
+        finishedAt: '',
+        generatedPhotoCount: 0,
+        importedSourcePhotoCount: 0,
+        jobId,
+        requestedPhotoCount: 0,
+        skippedPhotoCount: 0,
+        startedAt,
+        status: 'queued',
+        targetPhotoCount: 0,
+        transcodedPhotoCount: 0,
+      },
     };
   }
 

@@ -99,6 +99,7 @@ fun MemoryExhibitionPlayer(
   var showPlaybackMenu by remember { mutableStateOf(false) }
   var playbackMenuIndex by remember { mutableIntStateOf(0) }
   var chromeVisibilityTick by remember { mutableIntStateOf(0) }
+  var foregroundVisible by remember(item.photoId) { mutableStateOf(false) }
   val menuItems = listOf("播放设置", "幻灯片播放", "循环播放", "照片信息", "返回相册")
   val motionProgress = remember(item.photoId) { Animatable(0f) }
   val textProgress = remember(item.photoId) { Animatable(0f) }
@@ -124,6 +125,11 @@ fun MemoryExhibitionPlayer(
     motionProgress.snapTo(0f)
     textProgress.snapTo(0f)
     textProgress.animateTo(1f, animationSpec = tween(durationMillis = 1_350))
+  }
+  LaunchedEffect(item.photoId) {
+    foregroundVisible = false
+    delay(foregroundRevealDelayMillis())
+    foregroundVisible = true
   }
   LaunchedEffect(item.photoId, item.durationMs) {
     motionProgress.animateTo(
@@ -224,6 +230,7 @@ fun MemoryExhibitionPlayer(
     ImageStage(
       imageLoader = imageLoader,
       item = item,
+      foregroundVisible = foregroundVisible,
       motionProgress = motionProgress.value,
       portraitVariant = portraitVariant,
       onLoading = { imageLoadState = ExhibitionImageLoadState.Loading },
@@ -293,7 +300,7 @@ fun MemoryExhibitionPlayer(
       }
     }
 
-    when (imageLoadState) {
+    if (foregroundVisible) when (imageLoadState) {
       ExhibitionImageLoadState.Loading -> ExhibitionStatus(
         modifier = Modifier.align(Alignment.Center),
         title = "正在布展",
@@ -385,6 +392,7 @@ private fun PlaybackMenuRow(icon: String, label: String, subLabel: String, selec
 private fun ImageStage(
   imageLoader: ImageLoader,
   item: TvPlaylistItem,
+  foregroundVisible: Boolean,
   motionProgress: Float,
   portraitVariant: PortraitLayoutVariant?,
   onLoading: () -> Unit,
@@ -393,7 +401,8 @@ private fun ImageStage(
 ) {
   val context = LocalContext.current
   val foregroundRequest = ImageRequest.Builder(context).data(item.displayImageUrl).build()
-  val backgroundRequest = ImageRequest.Builder(context).data(item.backgroundImageUrl).build()
+  val backgroundUrl = item.backgroundImageUrl.ifBlank { item.displayImageUrl }
+  val backgroundRequest = ImageRequest.Builder(context).data(backgroundUrl).build()
   val scale = foregroundMotionScale(portraitVariant, motionProgress)
   val translateX = 0f
   val translateY = foregroundMotionTranslationY(portraitVariant, motionProgress)
@@ -429,6 +438,10 @@ private fun ImageStage(
       translationX = translateX
       translationY = translateY
     }
+    if (!foregroundVisible) {
+      return@BoxWithConstraints
+    }
+
     if (photoFrame == null) {
       AsyncImage(
         model = foregroundRequest,
@@ -912,7 +925,9 @@ internal fun foregroundContentScale(
 
 internal fun shouldRenderBlurredBackground(
   portraitVariant: PortraitLayoutVariant?,
-): Boolean = portraitVariant == null || portraitVariant == PortraitLayoutVariant.Center
+): Boolean = true
+
+internal fun foregroundRevealDelayMillis(): Long = 200L
 
 internal fun foregroundMotionScale(
   portraitVariant: PortraitLayoutVariant?,

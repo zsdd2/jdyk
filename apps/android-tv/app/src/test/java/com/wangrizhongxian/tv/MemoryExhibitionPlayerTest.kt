@@ -250,11 +250,16 @@ class MemoryExhibitionPlayerTest {
   }
 
   @Test
-  fun sidePortraitLayoutsDoNotRenderASecondFullScreenPhotoBehindTheFrame() {
+  fun sidePortraitLayoutsRenderTheBlurredBackgroundInsteadOfBlack() {
     assertEquals(true, shouldRenderBlurredBackground(portraitVariant = null))
     assertEquals(true, shouldRenderBlurredBackground(PortraitLayoutVariant.Center))
-    assertEquals(false, shouldRenderBlurredBackground(PortraitLayoutVariant.PhotoRight))
-    assertEquals(false, shouldRenderBlurredBackground(PortraitLayoutVariant.PhotoLeft))
+    assertEquals(true, shouldRenderBlurredBackground(PortraitLayoutVariant.PhotoRight))
+    assertEquals(true, shouldRenderBlurredBackground(PortraitLayoutVariant.PhotoLeft))
+  }
+
+  @Test
+  fun foregroundPhotoWaitsBrieflyAfterTheBlurredBackgroundStarts() {
+    assertEquals(200L, foregroundRevealDelayMillis())
   }
 
   @Test

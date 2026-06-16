@@ -1,8 +1,123 @@
 # 往日重现开发进度同步
 
-更新时间：2026-06-14
+## 2026-06-16 上线覆盖前数据保护与收口清单
+
+- 当前目标：把最近多轮升级整理成上线前必须完成的门禁，确保用新镜像覆盖部署时不覆盖或丢失旧版本 SQLite、派生图、媒体缓存、APK 发布文件和设备授权数据。
+- 当前状态：已完成只读复核和本地发布门禁，当前工作区仍有跨后端、管理端、Android TV、发布脚本和 CI 的未提交改动；已完成的本地验证包括认证/资源签名、扫描 upsert 保留状态、AI 任务重启恢复、34 张待处理照片补齐、播放相册/设备授权展示优化、AI 第三段 10 字规则与展示信息编辑。生产 Compose 的持久化保护依赖 `/workspace/apps/backend-api/data`、`/workspace/media-cache`、`/workspace/releases` 挂载到宿主目录或 Docker 命名卷；镜像构建本身不会携带运行库覆盖线上数据。
+- 已确认的数据风险：`SqlitePhotoRepository.rebuildFromPhotoRoot()` 已从全表清空改为 `local-scan` upsert，能保留同一 `scan_###` 的 AI/派生状态；但如果生产照片目录与旧版本不一致，扫描仍会删除当前目录中不存在的 `source_type='local' AND source_album_id='local-scan'` 照片记录。SQLite schema 升级到 18 主要是补列、建表和刷新内置 AI 提示词；刷新提示词会覆盖 `ai_settings.scoring_prompt` 与 `output_contract_prompt`，上线前需确认这是预期。
+- 最新已验证步骤：首次执行 `.\scripts\release\verify-local-release.ps1` 时停在后端聚焦测试，根因是 4 个 AI 旁白归一化测试仍按旧的第三段 8 字预期断言；已把测试预期同步到当前确认的 10 字规则。随后 `node_modules\.bin\jest.CMD app.controller.spec.ts sqlite-photo.repository.spec.ts --runInBand` 通过 2 个套件 107 项；再次执行 `.\scripts\release\verify-local-release.ps1` 完整通过，覆盖 Android manifest 测试 3 项、后端聚焦测试、Web 聚焦测试 4 个文件 5 项、后端 build、Web typecheck、Web production build、两套 Compose 展开、Android Debug/Release 构建与 APK 元数据。补跑 `node_modules\.bin\jest.CMD app-access.guard.spec.ts app.controller.spec.ts app.module.spec.ts sqlite-photo.repository.spec.ts --runInBand` 通过 4 个套件 116 项；补跑 `vitest` 管理端 4 个测试文件通过 21 项。
+- 构建证据：本地 Debug APK 为 `apps/android-tv/app/build/outputs/apk/debug/app-debug.apk`，大小 `17483626` 字节，SHA256 `2D50552F7871B617EED59CBA8F98E0B6880A0F674E4A88A95B175949F8E2A20A`；本地 Release 产物为未签名 `apps/android-tv/app/build/outputs/apk/release/app-release-unsigned.apk`，大小 `14228232` 字节，SHA256 `722629F8E46ED96DCF44A893516AA825D8E34EE2D05BA5CDE58CFFF87CF74286`，只能作为构建验证，不能发布。
+- 上线前必须完成：
+  1. 给生产宿主目录做离线备份：`/vol1/1000/docker/jdyk/data/backend`、`/vol1/1000/docker/jdyk/data/media-cache`、`/vol1/1000/docker/jdyk/data/releases`，至少包含 `wrjdyk.sqlite`、`derivatives/`、`releases/`。
+  2. 在生产 `.env.feiniu` 或部署环境中补齐 `WRJDYK_ADMIN_PASSWORD` 与 `WRJDYK_AUTH_SECRET`，避免生产默认口令不可用导致无法登录，且避免 token secret 跟随口令变化导致旧 token 全失效。
+  3. 本地发布门禁已通过；提交/推送后还需确认远端 CI、GHCR 镜像和正式签名 APK。
+  4. 合并和推送后确认 GHCR `2.0.2` 与 `latest` 镜像构建成功，再在生产拉取前核对镜像 digest。
+  5. 生产覆盖启动后先只做健康检查和只读核对：`/api/health.version=2.0.2`、照片总数、播放相册数、设备数、AI 任务状态、TV 更新 manifest，不立即触发扫描/补齐/清理。
+  6. 确认线上数据无误后再按需触发补齐任务；生产扫描只能在确认照片源目录与旧版本一致后执行。
+- 当前不能自动执行的动作：不能直接 `docker compose up -d --force-recreate` 覆盖生产，不能清空/迁移生产卷，不能在未备份前执行扫描，不能发布未签名 Android TV APK，不能把本地 `app-release-unsigned.apk` 当正式更新包。
+- 下一步计划：先完成上线前代码收口与测试门禁；随后提交/推送本轮改动，等待 GHCR 和 Android TV 发布工作流；最后按“备份 -> 拉镜像 -> 重建容器 -> 只读核对 -> 设备/页面验证 -> 必要时补齐”的顺序上线。
+- 当前风险：本轮只做了本机静态与文档复核，没有直接读取生产 NAS 上的真实数据目录，也没有执行生产容器覆盖；上线安全最终必须以生产备份文件存在、生产容器卷挂载正确、健康接口和数据计数核对通过为准。
+
+## 2026-06-16 AI 第三段旁白 10 字规则与展示信息编辑
+
+- 当前目标：修复 AI 识别详情中第三段旁白比原始 JSON 少字的问题，并允许在旁白详情处修改展示时间、地点、天气，支持对已选照片批量修改展示信息。
+- 当前状态：根因确认是后台归一化把 `lyrical_closure / closing_line` 硬截为 8 个中文字符，已统一改为 10 个中文字符以内；系统提示词同步改成“lyrical_closure 不超过 10 个中文字符”。照片 metadata 更新接口扩展 `takenAt`、`location`、`weather`，其中时间/地点写入 photos 表，天气写回 `ai_detail.raw.photo_analysis.observed_meta.weather`，并允许传空字符串清空。管理端照片列表和 AI 详情新增展示时间/地点/天气编辑，已选照片支持“批量改展示信息”。
+- 最新已验证步骤：先让 `app.controller.spec.ts` 中“第三段 10 字”和“metadata 编辑时间/地点/天气”聚焦测试失败；实现后 `.\node_modules\.bin\jest.CMD app.controller.spec.ts --runInBand --testNamePattern="ten Chinese characters|edits photo metadata"` 通过 2 项；`corepack pnpm -F @wrjdyk/backend-api build` 通过；`corepack pnpm -F @vben/web-antd run typecheck` 通过；`..\..\node_modules\.bin\vitest.CMD run src/views/photo-library/components/ai-narration-options.spec.ts src/views/photo-library/photos/photo-list-status.spec.ts src/views/photo-library/photos/playback-album-assignment.spec.ts` 通过 3 个文件 10 项。
+- 运行态验证：已重启本地 3999 到新构建，当前监听 PID 37628，`/api/health` 返回 ok。用真实 admin token 调用 `/api/admin/photo-library/photos/scan_001/metadata` 验证时间/地点/天气可写入，并确认地点/天气可恢复为空；Playwright 登录 5200 后确认照片列表出现“识别待处理/旁白待处理/识别失败/旁白失败”“批量改展示信息”，AI 详情弹窗出现“展示信息/保存展示信息”，且“可选识别旁白”仍正常显示。
+- 下一步计划：继续第二优先级，把照片列表批量操作的“选择后反馈”和筛选空状态做得更明确；随后进入 TV 真机复核竖屏背景和 0.2 秒前后景显示顺序。
+- 当前风险：天气目前作为 AI 原始详情中的 observed_meta 字段保存，没有新增独立数据库列；这保持了现有 TV 顶栏投影链路，但未来如果需要按天气筛选，应再补独立列和索引。
+
+## 2026-06-16 第二优先级：播放相册与设备授权体验优化
+
+- 当前目标：把第一优先级补齐后的后台状态转成管理端可理解的播放相册可播状态、设备授权状态和异常提示，减少“0 个授权相册”等误导。
+- 当前状态：播放相册页新增“可播放 / 需关注 / 启用设备”概览和“可播状态”列，按照片数、设备授权、AI 策略判断 `可播放`、`无照片`、`未授权`、`AI 停用`；同列展示授权设备数量和设备名称摘要。设备中心新增设备概览，授权相册列改为显示“全部相册”策略或具体相册名称摘要，并清理编辑弹窗中重复的设备名称/启用字段；不选择授权相册时的占位文案已说明默认可观看全部播放相册。
+- 最新已验证步骤：新增 `playback-album-view.spec.ts` 覆盖空授权列表等于全部相册、未授权、无照片优先级和设备授权摘要；`.\\node_modules\\.bin\\vitest.CMD run apps/web-antd/src/views/photo-library/playback-albums/playback-album-view.spec.ts` 通过 1 个测试文件 9 项；`corepack pnpm -F @vben/web-antd run typecheck` 通过。
+- 运行态验证：本地后端 `http://127.0.0.1:3999/api/health` 返回 `ok`、版本 `2.0.2`，前端 `http://127.0.0.1:5200` 返回 200。Playwright 使用真实登录接口 `admin/admin123` 注入会话后访问播放相册页，确认显示播放相册 3、已分拣照片 91、可播放 1、需关注 2、启用设备 7，并在行内看到“可播放 / AI 停用”和授权设备摘要；访问设备中心确认显示设备 7、启用设备 7、授权相册列展示具体相册名称摘要。页面无运行错误，仅有既有 StorageManager 空 prefix warning。
+- 下一步计划：进入第二优先级的下一项，优化照片列表批量操作反馈与筛选入口，让“待处理/已完成/失败”和批量补齐后的结果更容易定位；随后再回到 TV 真机复核竖屏背景与 0.2 秒前后景显示顺序。
+- 当前风险：本轮只改管理端展示和纯前端 helper，未改后台授权语义；当前设备数据里没有启用设备处于“全部相册权限”策略，相关语义由单测覆盖但运行态未出现真实样例。
+
+## 2026-06-16 第一优先级：照片中心待处理补齐任务入口
+
+- 当前目标：先补齐必须能力，为剩余待处理照片提供安全的批量重转码 + AI 补全入口，而不是继续做泛 UI 美化。
+- 当前状态：后端新增 `POST /api/admin/photo-library/backfill-jobs`，会创建 `backfill` 类型 AI 进度任务；服务层新增 `createPhotoCenterBackfillJob()`，按照片中心分页筛选 `derivativeStatus != ready` 或 AI 未完成的照片，逐张复用现有派生图生成与统一视觉 AI 分析链路，单张失败计数但不中断批次；管理端照片列表新增“补齐待处理”按钮，触发后打开现有 AI 进度弹窗。真实补齐任务 `backfill_mqgbn7rn` 已执行完成，34 张待处理照片全部补齐。
+- 最新已验证步骤：先写后端补齐任务测试并确认旧实现因缺少 `createPhotoCenterBackfillJob` 失败；实现后通过。`node_modules\.bin\jest.CMD app-access.guard.spec.ts app.controller.spec.ts sqlite-photo.repository.spec.ts --runInBand` 通过 3 个套件 115 项；`& ..\..\node_modules\.bin\vitest.CMD run src\views\photo-library\components\ai-task-progress.spec.ts` 通过 1 个文件 5 项；`corepack pnpm -F @wrjdyk/backend-api build` 通过；`corepack pnpm -F @vben/web-antd run typecheck` 通过。
+- 运行态验证：已重启本地 3999 到新构建 PID 29152，`/api/health.version=2.0.2`；先使用 `limit=0` 调用 `/api/admin/photo-library/backfill-jobs` 验证路由/鉴权/任务记录链路；随后按用户确认执行真实补齐任务 `backfill_mqgbn7rn`，AI 进度轮询结果为 `requested=34, completed=34, failed=0, skipped=0`。执行后照片中心 69 张全部为 `derivativeStatus=ready`、`aiScoreStatus=completed`、`aiCommentStatus=completed`，pendingCount=0；Playwright 登录 5200 后确认照片列表首屏无“待转码/待补全/pending”，前 20 条均显示“已转码/已完成”。
+- 下一步计划：进入第二优先级，优化播放相册/设备授权体验，把已补齐的数据状态转成更清晰的相册可播状态、设备授权状态、异常提示和批量操作反馈。
+- 当前风险：真实 AI 已完成 34 张本地扫描照片补齐；后续若重新扫描或新增照片，仍需通过“补齐待处理”入口继续处理新增 pending 项。
+
+## 2026-06-16 后续开发计划重排与架构复核
+
+- 当前目标：按当前真实业务闭环重新排序后续开发，把必须补齐的基础能力放在第一位，直接影响体验的界面/交互放在第二位，一般优化放在第三位。
+- 运行态基线：本地后台 `2.0.2`；照片中心 69 张，`local=38`、`feiniu=31`；`derivativeStatus` 为 `ready=35`、`pending=34`；AI 评分和旁白均为 `completed=35`、`pending=34`；34 个 pending 全部来自“本地扫描”。播放相册 3 个，累计照片数 91；设备 7 个；TV 更新清单仍发布 `2.0.0`。
+- 架构理解：当前核心链路是照片源入池（本地扫描/飞牛）-> SQLite 照片中心 -> 派生图与 AI 识别 -> 播放相册策展 -> 设备授权 -> TV 端 `/device/albums` 和 `/device/playlist` 消费 -> TV 更新清单发布。`AppService` 目前承担调度/业务聚合，`SqlitePhotoRepository` 承担持久化和列表投影，管理端围绕 `photo-library.ts` 调用这些能力。
+- 第一优先级必须补齐：建立“剩余待处理照片批量重转码 + AI 补全”的后台安全入口、任务状态和可重试机制；确认扫描/upsert 不再破坏状态；把 TV 更新清单与当前实际发布版本策略收口；补齐关键接口的资源签名回归测试。
+- 第二优先级直接影响体验：播放相册/设备授权页面重做信息层级，清楚呈现设备授权、相册绑定、补全 AI、转码缺失、更新时间和异常原因；照片列表批量操作需要更明确的反馈和筛选入口；TV 端仍需真机复核竖屏背景和 0.2 秒前后景显示顺序。
+- 第三优先级优化项：拆分 `AppService`/`SqlitePhotoRepository` 过大的职责，整理照片源缓存、Feiniu 分页/远程源性能、日志和运行文档；统一版本显示和发布文档。
+- 下一步计划：先实现第一优先级中的批量补齐任务，不先做大规模 UI 美化；完成后用 HTTP、页面和数据库状态确认 34 张本地扫描照片从 pending 进入 ready/completed，再进入播放相册/设备授权体验优化。
+
+## 2026-06-16 缩略图鉴权、播放相册封面与扫描状态保留修复
+
+- 当前目标：修复资源鉴权加固后管理端图片无法通过普通 `<img>` 加载的问题，恢复照片列表与播放相册封面缩略图；定位本地扫描导致 AI 识别状态、转码状态被重置的问题；同步后台版本与下一步计划。
+- 当前状态：照片资源接口仍保持鉴权，后台改为给照片列表、播放相册列表、播放相册成员、设备相册和播放列表中的 `/api/photos/*`、`/api/derivatives/*` 资源 URL 附加 6 小时 `assetToken`，`AppAccessGuard` 只允许有效签名资源匿名读取。`SqlitePhotoRepository.rebuildFromPhotoRoot()` 已从“清空重建 photos/albums”改为按 `scan_###` upsert，并保留已有 AI、转码、旁白和派生图字段，避免后续扫描再次抹掉状态。
+- 数据恢复：当前运行库 `apps/backend-api/data/wrjdyk.sqlite` 已在修改前备份为 `apps/backend-api/data/wrjdyk.sqlite.before-asset-fix-20260616-110126.bak`。从可用备份 `.docker-test/backend2/data/wrjdyk.sqlite` 中按文件名安全匹配恢复了 4 张照片的 AI/转码状态和派生文件；当前照片列表为 38 张，其中 4 张 `ready/completed/completed`，34 张仍为真实待转码/待 AI 状态，剩余无法从现有备份可靠恢复，需要重新跑转码和 AI 补全。
+- 播放相册封面修复：根因是播放相册页面用 `coverPhotoId` 在前端重新拼 `/api/photos/{id}/thumb`，绕过了后台签名；现已让后台 `PlaybackAlbum` 返回 `thumbnailUrl/coverImageUrl` 并统一签名，前端优先使用后台签名 URL，仅在旧响应缺失时回退拼接。
+- CodeGraph：本轮开始时 MCP 多次返回 `Transport closed`，`.codegraph/daemon.pid` 指向的 pid 不存在，daemon 日志显示曾因 idle timeout 退出；最终复查已恢复，索引状态为 1526 files / 14259 nodes / 29169 edges。
+- 最新已验证步骤：`node_modules\.bin\jest.CMD app-access.guard.spec.ts app.controller.spec.ts sqlite-photo.repository.spec.ts --runInBand` 通过 3 个套件 113 项；`corepack pnpm -F @vben/web-antd run typecheck` 通过；`corepack pnpm -F @wrjdyk/backend-api build` 通过；本地 3999 已重启到新构建 PID 42840，`/api/health.version=2.0.2`；播放相册接口第一张封面签名 URL 返回 `200 image/jpeg`，去掉 token 返回 `401`；Playwright 登录后访问 `http://127.0.0.1:5200/photo-library/playback-albums`，3 张 `img.album-cover` 均加载完成且无图片 4xx。
+- 当前版本更新内容：后台/管理端镜像版本推进到 `2.0.2`，包含资源签名访问、扫描保留状态、播放相册封面签名、照片列表状态局部恢复；Android TV 版本未改，仍保持 `2.0.1` 变更边界。
+- 下一步计划：先补一个后台“剩余 34 张照片批量重转码 + AI 重新识别/补全”的安全入口和进度反馈，把当前数据彻底补齐；完成后继续原计划进入“播放相册/设备授权界面优化”，减少设备授权、相册绑定和异常状态的操作歧义。
+- 当前风险：`assetToken` 会过期，页面刷新或重新拉接口会自动生成新 token；旧进程占用 3999 会导致看不到新版本，已按 workflow 停掉旧 PID 并重启；剩余 34 张状态不是显示问题，而是当前库缺少可恢复的历史 AI/派生记录。
+
+更新时间：2026-06-16
 
 本文是项目计划、完成状态、风险和后续步骤的唯一权威入口。开发规范、API 目录和固定发布流程统一维护在 `DEVELOPMENT_STANDARDS_API.md`。
+
+## 2026-06-16 AI 任务界面可观测性优化
+
+- 当前目标：从“后台稳固”进入“界面优化”阶段，先把管理端 AI 识别进度弹窗补齐为可判断、可筛选、可定位异常原因的运行视图。
+- 当前状态：AI 识别进度弹窗已新增任务总览卡片、进行中/失败/重启恢复筛选、后端重启中断告警、失败原因 tooltip、更新时间格式化和重启恢复行高亮；重启恢复任务会被单独识别为“后端重启中断”，避免和普通 AI 失败混在一起。
+- 最新已验证步骤：已先让 `ai-task-progress.spec.ts` 在缺少 helper 与筛选函数时失败，随后补齐实现并通过；`& ..\..\node_modules\.bin\vitest.CMD run src/views/photo-library/components/ai-task-progress.spec.ts` 通过 1 个测试文件 4 项；`corepack pnpm -F @vben/web-antd run typecheck` 通过；Playwright 使用本地 3999 登录和 5200 页面验证，`AI 进度 -> 重启恢复 3` 后只显示 3 行，弹窗宽度 1240，表格宽度 1192，重启恢复行背景为 `rgba(250, 173, 20, 0.09)`，时间列 `white-space: nowrap`。
+- 下一步计划：继续界面优化主线，优先处理“播放相册/设备授权”管理界面，把后台稳定能力转成更清晰的设备状态、授权状态、播放相册绑定和异常提示；完成后再回到照片列表的批量操作反馈与空状态优化。
+- 当前风险：本轮只覆盖管理端 AI 任务弹窗，没有改后端接口和 Android TV；CodeGraph daemon 日志显示 watcher 已自动同步文件变化，但 `codegraph_status` MCP 查询复查时传输断开，后续如果进入跨模块结构调整，需要先恢复 CodeGraph 状态查询再动代码。
+
+## 2026-06-16 AI 任务重启恢复
+
+- 当前目标：完成后台稳固阶段的 AI 任务重启恢复，避免后端进程重启后历史 `queued` / `running` / `retrying` 任务永久停留在进行中状态。
+- 当前状态：SQLite 仓库新增 `recoverInterruptedAiRecognitionTasks()`，会在启动恢复时把未完成 AI 任务标记为 `failed`，清空活动照片字段，写入明确错误原因 `Backend restarted before the AI task finished. Please retry the task.`，并保留已完成/已失败任务不变。`AppService.onModuleInit()` 已接入该恢复逻辑；现有 AI 定时调度仍由 `main.ts` 中的 `startPlaybackAlbumAiScheduler()` 启动，不在恢复阶段自动重跑任务，避免重启后重复消耗 AI 调用。
+- 最新已验证步骤：已先看到仓库恢复测试因缺少 `recoverInterruptedAiRecognitionTasks` 失败、服务启动恢复测试因缺少 `onModuleInit` 失败；实现后通过。验证命令：`node_modules\.bin\jest.CMD sqlite-photo.repository.spec.ts --runInBand --testNamePattern="marks unfinished AI recognition tasks"` 通过；`node_modules\.bin\jest.CMD app.controller.spec.ts --runInBand --testNamePattern="recovers unfinished AI recognition tasks"` 通过；`node_modules\.bin\jest.CMD app-access.guard.spec.ts app.controller.spec.ts app.module.spec.ts sqlite-photo.repository.spec.ts --runInBand` 通过 4 个套件 111 项；`corepack pnpm -F @wrjdyk/backend-api build` 通过。已重启本地 3999 后端并用 HTTP 验证 `/api/health` 返回 `ok`，受保护 `/api/admin/photo-library/ai-tasks` 可访问，当前运行库 AI 任务状态汇总为 `completed=61`、`failed=6`，无 `queued/running/retrying` 遗留。
+- 下一步计划：进入“后台可观测性到界面优化”的过渡步骤，先检查管理端 AI 任务弹窗/列表是否清楚显示失败原因、时间和重试/清理入口；若现有 UI 足够，再进入照片中心、播放相册、设备授权页面的界面优化。
+- 当前风险：恢复策略当前选择“失败并提示重试”，没有自动续跑旧任务；这能避免重复 AI 消耗，但用户需要在管理端手动重试仍有价值的任务。
+
+## 2026-06-16 本地启动流程与默认口令策略收口
+
+- 当前目标：先启动本地后端与管理端，再继续上一轮计划中的默认 `admin/admin123` 部署策略收口，并把反复验证后的本地启动流程沉淀为全局 workflow。
+- 当前状态：本地后端 `http://127.0.0.1:3999` 与管理端 `http://127.0.0.1:5200` 已启动并通过 HTTP 检查；全局 workflow 已写入 `C:\Users\Administrator\.codex\workflows\debugging\jdyk-local-dev-startup.md`。后端管理端登录与 TV 设备登录现在共用 `WRJDYK_ADMIN_USERNAME` / `WRJDYK_ADMIN_PASSWORD`；未设置 `WRJDYK_ADMIN_PASSWORD` 时仅非生产运行态保留 `admin123`，`NODE_ENV=production` 下默认口令不可用。`DEVELOPMENT_STANDARDS_API.md` 已同步更新账号与口令约定。
+- 最新已验证步骤：已先看到新增测试在旧实现下失败：生产环境仍接受默认口令、设备登录不跟随 `WRJDYK_ADMIN_PASSWORD`；实现后通过。验证命令：`node_modules\.bin\jest.CMD app.controller.spec.ts --runInBand --testNamePattern="built-in default admin password|configured admin password"` 通过；`node_modules\.bin\jest.CMD app-access.guard.spec.ts app.controller.spec.ts app.module.spec.ts --runInBand` 通过 3 个套件 84 项；`corepack pnpm -F @wrjdyk/backend-api build` 通过；HTTP 验证 `/api/health` 返回 `ok`，`http://127.0.0.1:5200/` 返回 200，非生产本地 `/api/auth/login` 与 `/api/device/login` 使用 `admin/admin123` 冒烟通过。
+- 下一步计划：继续处理 AI 任务重启恢复；若要进入生产部署前安全收口，需要设置真实 `WRJDYK_ADMIN_PASSWORD` 并重启后端验证默认口令已拒绝。
+- 当前风险：本轮没有在 `NODE_ENV=production` 的真实运行进程上做 HTTP 冒烟，生产默认口令拒绝由单元测试覆盖；本地当前 3999 仍按非生产运行态保留开发默认口令，便于继续调试。
+
+## 2026-06-16 TV 竖屏左右版式背景与设备 token 加固
+
+- 当前目标：修复 Android TV 竖屏照片左右版式未居中时背景黑屏的问题，并把显示顺序改成先出现模糊背景、0.2 秒后再出现前景照片；同时继续审计后的第二步安全加固，将设备登录 token 从可预测字符串改为随机持久 token。
+- 当前状态：Android TV 播放器左右竖屏版式现在也渲染模糊背景；背景图优先使用 `backgroundImageUrl`，缺失时回退到当前展示图；前景照片通过 `foregroundRevealDelayMillis()` 延迟 200ms 后显示，加载/错误状态也等前景出现后再显示。后端设备登录现在生成 `dt_` + 48 位十六进制随机 token，同一设备重复登录复用 SQLite 中已持久化 token，并移除了 `dt_login_admin` legacy 通行路径。
+- 最新已验证步骤：已先看到 `MemoryExhibitionPlayerTest` 因缺少 `foregroundRevealDelayMillis()` 失败、设备 token 新测试因旧的 `dt_login_admin_living-room-tv` 失败；实现后验证通过。验证命令：`.\gradlew.bat :app:testDebugUnitTest --tests com.wangrizhongxian.tv.MemoryExhibitionPlayerTest --no-daemon` 通过；`node_modules\.bin\jest.CMD app-access.guard.spec.ts app.controller.spec.ts app.module.spec.ts --runInBand` 通过 3 个套件 82 项；`corepack pnpm -F @wrjdyk/backend-api build` 通过；`corepack pnpm -F @vben/web-antd run typecheck` 通过；`.\gradlew.bat :app:assembleDebug --no-daemon` 通过。
+- 下一步计划：继续处理 AI 任务重启恢复；生产部署前设置真实 `WRJDYK_ADMIN_PASSWORD` 并重启后端验证。
+- 当前风险：本轮已完成单测和构建验证，但还没有在真实 Android TV 设备上截图复核 0.2 秒显示顺序和左右竖屏背景效果；设备 token 行为改变后，已登录旧设备可能需要重新登录获取随机持久 token。
+
+## 2026-06-16 第一步认证与照片资源边界修复
+
+- 当前目标：先修复审计中最高优先级的服务端访问边界，避免管理端 API、照片资源接口和 refresh 入口在无有效 token 时直接进入业务 handler。
+- 当前状态：已新增全局 `AppAccessGuard` 并接入 `AppModule`；管理端 `/admin/*`、`/user/info`、`/menu/all`、`/auth/codes`、`/auth/logout`、`/auth/refresh` 需要 admin token；照片资源 `/photos/*` 与 `/derivatives/*` 需要 admin token 或 device token；设备播放列表、相册和播放记录需要 device token；健康检查、登录、TV 更新清单和 APK 下载保持公开。管理端登录不再返回静态 `wrjdyk_admin_admin`，改为 HMAC 签名的 `wrjdyk_admin.<payload>.<signature>`，refresh 会用当前 admin token 换新 token。管理端 refresh 请求已改为携带当前 access token。
+- 最新已验证步骤：已先看到新增 `app-access.guard.spec.ts` 因缺少 `AppAccessGuard` 失败；随后实现通过。验证命令：`node_modules\.bin\jest.CMD app-access.guard.spec.ts app.controller.spec.ts app.module.spec.ts --runInBand` 通过 3 个套件 81 项；`corepack pnpm -F @wrjdyk/backend-api build` 通过；`corepack pnpm -F @vben/web-antd run typecheck` 通过；CodeGraph 复查索引为 1524 个文件、14219 个符号节点、29278 条关系边。
+- 下一步计划：继续第二步安全加固，把默认 `admin/admin123` 改成初始化/环境变量强制配置策略；随后再处理 AI 任务重启恢复。
+- 当前风险：本轮没有启动真实 `3999/5200` 服务做 HTTP 冒烟，也没有改 Android TV 登录交互；默认账号仍保留用于兼容现有部署，安全性尚未达到生产强口令级别。
+
+## 2026-06-16 CodeGraph 当前业务流程审计
+
+- 当前目标：用 CodeGraph 和 `rg` 重新审计当前照片中心、AI 任务、播放相册、TV 播放与 TV 更新业务流程，整理最应该优先修复的问题。
+- 当前状态：已完成只读审计。CodeGraph 索引当前为 1522 个文件、14178 个符号节点、29109 条关系边；入口集中在 `apps/backend-api/src/app.controller.ts`、`apps/backend-api/src/app.service.ts`、`apps/backend-api/src/sqlite-photo.repository.ts`、`apps/web-antd/src/api/photo-library.ts`、`apps/android-tv/app/src/main/java/com/wangrizhongxian/tv/MainActivity.kt`、`MemoryExhibitionPlayer.kt`、`AppUpdateManager.kt`。本轮未修改业务代码。
+- 最新已验证步骤：CodeGraph 状态检查通过；`rg` 已核查管理端/设备端路由、照片资源接口、AI 任务状态、TV 更新清单、飞牛相册源和 Android TV 取数链路。确认最高优先级问题是管理端/设备端仍保留演示期认证模型：管理端 API 缺少后端鉴权守卫，设备登录使用硬编码 `admin/admin123`，设备 token 可预测且存在 legacy 通行路径，照片资源接口公开返回原图/展示图/缩略图。
+- 下一步计划：先修复认证与资源访问边界，再处理 AI 任务重启恢复和飞牛远程源缓存/分页性能，最后再做 `AppController` / `AppService` / `SqlitePhotoRepository` 的服务拆分。
+- 当前风险：本轮为静态审计，未启动后端、未调用真实接口、未运行测试；修复认证会跨后端、管理端和 Android TV 登录链路，需要先给出具体修改计划并获得确认。
 
 ## 2026-06-15 AI 地点精简、第三行字数限制与 TV 竖屏重叠修复
 
@@ -420,3 +535,10 @@ P2：
 - 当前状态：发布分支为 `codex/release-2.0.0`；项目镜像与管理端版本已设为 `2.0.0`；Android TV 已设为 `versionCode 12 / versionName 2.0.0`；两套 Compose 更新元数据、发布校验脚本、manifest 测试和 TV README 已同步。完整发布预检通过：manifest 测试 3/3、后端发布测试 96/96、管理端测试 5/5、后端编译、管理端 typecheck/生产构建、两套 Compose 展开及 Android 清理后全量单测和 Debug/Release 构建均成功；后端额外全量回归 116/116 通过；推送前审查未发现问题。
 - 构建证据：Debug APK 为 `17,483,625` 字节，SHA256 `43E12329B6A8C10EFF9F0E2750147F9EBCC2B782E824A85E2EFC9E07955854B6`；本地 Release 为未签名验证包，不发布，正式签名 APK 由 GitHub Actions 生成。
 - 未来修改计划：分逻辑提交并合并回 `main`，推送 `main`、`v2.0.0` 和 `tv-v2.0.0`；随后核对 GitHub Actions、GHCR `2.0.0/latest` 与正式签名 APK，并将同一正式 APK 同步到后台更新服务。
+
+2026-06-15 Android TV 本地 Release 构建：
+- 目标：按当前 `versionCode 13 / versionName 2.0.1` 在本机生成 TV 端 release 构建产物，并确认是否为正式签名包。
+- 状态：`apps/android-tv` 下执行 `clean :app:assembleRelease` 已成功；真实产物为 `F:\xinxiangmu\jdyk\apps\android-tv\app\build\outputs\apk\release\app-release-unsigned.apk`，大小 `14228232` 字节，SHA256 `3546F25FCD6B629440D3073F07BB8C91607C105092BC9E6F4B617DF9355CAF5F`。
+- 验证：`aapt dump badging` 确认为 `com.wangrizhongxian.tv`、`versionCode='13'`、`versionName='2.0.1'`；`apksigner verify --verbose` 返回 `DOES NOT VERIFY` / `Missing META-INF/MANIFEST.MF`，确认该包未签名。
+- 阻塞：当前 Process/User/Machine 环境均没有 `ANDROID_TV_KEYSTORE_FILE`、`ANDROID_TV_KEYSTORE_PASSWORD`、`ANDROID_TV_KEY_ALIAS`、`ANDROID_TV_KEY_PASSWORD`，本机无法生成正式签名 APK；README 也要求正式包必须使用四个 `ANDROID_TV_*` 签名参数，不能发布 `app-release-unsigned.apk`。
+- 下一步：补齐四个 `ANDROID_TV_*` 签名环境变量后重新执行 release 构建，再用 `apksigner verify` 确认签名通过，并复制为 `releases\wangri-tv-2.0.1.apk`。

@@ -153,6 +153,7 @@ export interface PlaybackAlbum {
   aiPriorityTags: string[];
   aiRepeatIntervalMinutes: number;
   aiScoreThreshold: number;
+  coverImageUrl: string;
   coverPhotoId: string;
   createdAt: string;
   description: string;
@@ -166,6 +167,7 @@ export interface PlaybackAlbum {
   sourceAlbumId: string;
   sourceAlbumTitle: string;
   sourceType: 'feiniu_album' | 'manual';
+  thumbnailUrl: string;
   title: string;
   lastAiCheckedAt: string;
   updatedAt: string;
@@ -285,6 +287,10 @@ export interface ClearAiRecognitionTasksResult {
   deletedTaskCount: number;
 }
 
+export interface RecoverInterruptedAiRecognitionTasksResult {
+  recoveredTaskCount: number;
+}
+
 export interface PhotoAiInsightInput {
   aiBeautyScore?: number;
   aiComment: string;
@@ -330,8 +336,11 @@ export interface UpdatePhotoAiInsightInput {
 export interface UpdatePhotoMetadataInput {
   captionTitle?: string;
   importAlbumTitle?: string;
+  location?: string;
   sourceAlbumKind?: PhotoCenterSourceAlbumKind;
   sourceOwnerName?: string;
+  takenAt?: string;
+  weather?: string;
 }
 
 export interface UpdatePlaybackAlbumInput {
@@ -413,7 +422,7 @@ export interface AiRecognitionTaskProgress {
   status: AiRecognitionTaskStatus;
   targetId: string;
   targetTitle: string;
-  targetType: 'album' | 'photo' | 'retry';
+  targetType: 'album' | 'backfill' | 'photo' | 'retry';
 }
 
 interface SqlitePhotoRepositoryOptions {
@@ -778,6 +787,38 @@ export class SqlitePhotoRepository {
       .run() as unknown as { changes: number };
     return {
       deletedTaskCount: result.changes ?? 0,
+    };
+  }
+
+  recoverInterruptedAiRecognitionTasks(
+    recoveredAt = new Date().toISOString(),
+  ): RecoverInterruptedAiRecognitionTasksResult {
+    this.initialize();
+    const result = this.getDatabase()
+      .prepare(
+        `
+          UPDATE ai_recognition_tasks
+          SET
+            active_photo_id = '',
+            active_photo_name = '',
+            error = ?,
+            failed_photo_count = CASE
+              WHEN failed_photo_count > 0 THEN failed_photo_count
+              ELSE 1
+            END,
+            finished_at = ?,
+            last_updated_at = ?,
+            status = 'failed'
+          WHERE status IN ('queued', 'running', 'retrying')
+        `,
+      )
+      .run(
+        'Backend restarted before the AI task finished. Please retry the task.',
+        recoveredAt,
+        recoveredAt,
+      ) as unknown as { changes: number };
+    return {
+      recoveredTaskCount: result.changes ?? 0,
     };
   }
 
@@ -1151,13 +1192,13 @@ export class SqlitePhotoRepository {
     const files = collectPhotoFiles(this.photoRoot);
     const database = this.getDatabase();
 
+    const photoIds = files.map((_, index) =>
+      `scan_${(index + 1).toString().padStart(3, '0')}`,
+    );
+
     database.exec('BEGIN');
     try {
-      database.exec(`
-        DELETE FROM album_photos;
-        DELETE FROM photos;
-        DELETE FROM albums;
-      `);
+      database.prepare('DELETE FROM album_photos WHERE album_id = ?').run('local-scan');
 
       if (files.length > 0) {
         database
@@ -1165,6 +1206,10 @@ export class SqlitePhotoRepository {
             `
               INSERT INTO albums (album_id, title, description, sort_order)
               VALUES (?, ?, ?, ?)
+              ON CONFLICT(album_id) DO UPDATE SET
+                title = excluded.title,
+                description = excluded.description,
+                sort_order = excluded.sort_order
             `,
           )
           .run(
@@ -1189,6 +1234,20 @@ export class SqlitePhotoRepository {
             import_album_title
           )
           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          ON CONFLICT(photo_id) DO UPDATE SET
+            filename = excluded.filename,
+            taken_at = excluded.taken_at,
+            location = CASE
+              WHEN photos.location = '' THEN excluded.location
+              ELSE photos.location
+            END,
+            dominant_color = CASE
+              WHEN photos.dominant_color = '' THEN excluded.dominant_color
+              ELSE photos.dominant_color
+            END,
+            source_type = excluded.source_type,
+            source_album_id = excluded.source_album_id,
+            import_album_title = excluded.import_album_title
         `);
         const insertAlbumPhoto = database.prepare(`
           INSERT INTO album_photos (album_id, photo_id, position)
@@ -1214,6 +1273,31 @@ export class SqlitePhotoRepository {
           );
           insertAlbumPhoto.run('local-scan', photoId, index);
         });
+      }
+
+      if (photoIds.length > 0) {
+        const placeholders = photoIds.map(() => '?').join(', ');
+        database
+          .prepare(
+            `
+              DELETE FROM photos
+              WHERE source_type = 'local'
+                AND source_album_id = 'local-scan'
+                AND photo_id NOT IN (${placeholders})
+            `,
+          )
+          .run(...photoIds);
+      } else {
+        database
+          .prepare(
+            `
+              DELETE FROM photos
+              WHERE source_type = 'local'
+                AND source_album_id = 'local-scan'
+            `,
+          )
+          .run();
+        database.prepare('DELETE FROM albums WHERE album_id = ?').run('local-scan');
       }
 
       database.exec('COMMIT');
@@ -1799,6 +1883,7 @@ export class SqlitePhotoRepository {
       aiPriorityTags,
       aiRepeatIntervalMinutes,
       aiScoreThreshold,
+      coverImageUrl: '',
       coverPhotoId: '',
       createdAt: now,
       description: input.description?.trim() ?? '',
@@ -1812,6 +1897,7 @@ export class SqlitePhotoRepository {
       sourceAlbumId: input.sourceAlbumId?.trim() ?? '',
       sourceAlbumTitle: input.sourceAlbumTitle?.trim() ?? '',
       sourceType,
+      thumbnailUrl: '',
       title,
       lastAiCheckedAt: '',
       updatedAt: now,
@@ -2117,16 +2203,19 @@ export class SqlitePhotoRepository {
     const current = this.getDatabase()
       .prepare(
         `
-          SELECT caption_title, import_album_title, source_album_kind, source_owner_name
+          SELECT caption_title, import_album_title, source_album_kind, source_owner_name, taken_at, location, ai_detail
           FROM photos
           WHERE photo_id = ? AND ai_is_trash != 1
         `,
       )
       .get(normalizedPhotoId) as {
+        ai_detail: string;
         caption_title: string;
         import_album_title: string;
+        location: string;
         source_album_kind: PhotoCenterSourceAlbumKind;
         source_owner_name: string;
+        taken_at: string;
       } | undefined;
     if (!current) throw new Error(`Photo not found: ${normalizedPhotoId}`);
 
@@ -2138,15 +2227,21 @@ export class SqlitePhotoRepository {
             caption_title = ?,
             import_album_title = ?,
             source_album_kind = ?,
-            source_owner_name = ?
+            source_owner_name = ?,
+            taken_at = ?,
+            location = ?,
+            ai_detail = ?
           WHERE photo_id = ?
         `,
       )
       .run(
-        normalizeOptionalText(input.captionTitle, current.caption_title),
-        normalizeOptionalText(input.importAlbumTitle, current.import_album_title),
+        normalizeOptionalText(input.captionTitle, current.caption_title, true),
+        normalizeOptionalText(input.importAlbumTitle, current.import_album_title, true),
         normalizeSourceAlbumKind(input.sourceAlbumKind, current.source_album_kind),
-        normalizeOptionalText(input.sourceOwnerName, current.source_owner_name),
+        normalizeOptionalText(input.sourceOwnerName, current.source_owner_name, true),
+        normalizeOptionalText(input.takenAt, current.taken_at, true),
+        normalizeOptionalText(input.location, current.location, true),
+        updateAiDetailObservedWeather(current.ai_detail, input.weather),
         normalizedPhotoId,
       );
 
@@ -3851,6 +3946,9 @@ function rowToPlaybackAlbum(row: PlaybackAlbumRow): PlaybackAlbum {
       1440,
     ),
     aiScoreThreshold: normalizeScoreThreshold(row.ai_score_threshold, 80),
+    coverImageUrl: row.cover_photo_id
+      ? `/api/photos/${encodeURIComponent(row.cover_photo_id)}/display`
+      : '',
     coverPhotoId: row.cover_photo_id,
     createdAt: row.created_at,
     description: row.description,
@@ -3870,6 +3968,9 @@ function rowToPlaybackAlbum(row: PlaybackAlbumRow): PlaybackAlbum {
     sourceAlbumId: row.source_album_id,
     sourceAlbumTitle: row.source_album_title,
     sourceType: row.source_type === 'feiniu_album' ? 'feiniu_album' : 'manual',
+    thumbnailUrl: row.cover_photo_id
+      ? `/api/photos/${encodeURIComponent(row.cover_photo_id)}/thumb`
+      : '',
     title: row.title,
     lastAiCheckedAt: row.last_ai_checked_at,
     updatedAt: row.updated_at,
@@ -3943,6 +4044,29 @@ function extractAiDetailProjection(value: string): AiDetailProjection | null {
   return Object.keys(projection).length > 0 ? projection : null;
 }
 
+function updateAiDetailObservedWeather(value: string, weather: unknown): string {
+  if (typeof weather !== 'string') return value;
+  const normalizedWeather = weather.trim();
+  let parsed: unknown;
+  try {
+    parsed = value.trim() ? JSON.parse(value) : {};
+  } catch {
+    parsed = {};
+  }
+  const envelope = asRecord(parsed) ?? {};
+  const raw = asRecord(envelope.raw) ?? envelope;
+  const photoAnalysis = asRecord(raw.photo_analysis) ?? {};
+  const observedMeta = asRecord(photoAnalysis.observed_meta) ?? {};
+  observedMeta.weather = normalizedWeather;
+  photoAnalysis.observed_meta = observedMeta;
+  raw.photo_analysis = photoAnalysis;
+  if (asRecord(envelope.raw)) {
+    envelope.raw = raw;
+    return JSON.stringify(envelope);
+  }
+  return JSON.stringify(raw);
+}
+
 function buildPlaylistTopMeta(
   row: PhotoRow,
   projection: AiDetailProjection | null,
@@ -3978,7 +4102,7 @@ function extractAiNarrationVariants(
         candidate.lyrical_closure ??
           candidate.lyricalClosure ??
           candidate.closing_line,
-        8,
+        10,
       ),
       sceneDescription: normalizeNarrationPart(
         candidate.scene_description ??
@@ -4265,7 +4389,10 @@ function normalizeAiRecognitionTaskStatus(status: string): AiRecognitionTaskStat
 function normalizeAiRecognitionTaskTargetType(
   targetType: string,
 ): AiRecognitionTaskProgress['targetType'] {
-  return targetType === 'album' || targetType === 'photo' || targetType === 'retry'
+  return targetType === 'album' ||
+    targetType === 'backfill' ||
+    targetType === 'photo' ||
+    targetType === 'retry'
     ? targetType
     : 'photo';
 }

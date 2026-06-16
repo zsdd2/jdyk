@@ -45,7 +45,7 @@ export interface AiRecognitionTaskProgress {
   status: AiRecognitionTaskStatus;
   targetId: string;
   targetTitle: string;
-  targetType: 'album' | 'photo' | 'retry';
+  targetType: 'album' | 'backfill' | 'photo' | 'retry';
 }
 
 export interface CreatePhotoScanJobInput {
@@ -132,6 +132,7 @@ export interface PlaybackAlbum {
   aiPriorityTags: string[];
   aiRepeatIntervalMinutes: number;
   aiScoreThreshold: number;
+  coverImageUrl: string;
   coverPhotoId: string;
   createdAt: string;
   description: string;
@@ -145,6 +146,7 @@ export interface PlaybackAlbum {
   sourceAlbumId: string;
   sourceAlbumTitle: string;
   sourceType: 'feiniu_album' | 'manual';
+  thumbnailUrl: string;
   title: string;
   lastAiCheckedAt: string;
   updatedAt: string;
@@ -229,6 +231,16 @@ export interface PlaybackAlbumAiJobResult {
 
 export interface PlaybackAlbumScanJobResult extends PlaybackAlbumAiJobResult {
   transcodedPhotoCount: number;
+}
+
+export interface PhotoCenterBackfillJobInput {
+  limit?: number;
+  sourceType?: PhotoCenterSourceType;
+}
+
+export interface PhotoCenterBackfillJobResult extends PlaybackAlbumScanJobResult {
+  failedPhotoCount: number;
+  targetPhotoCount: number;
 }
 
 export type AiSettingsProvider =
@@ -535,6 +547,15 @@ export function createPhotoAiJobApi(photoId: string) {
   );
 }
 
+export function createPhotoCenterBackfillJobApi(
+  input: PhotoCenterBackfillJobInput = {},
+) {
+  return requestClient.post<PhotoCenterBackfillJobResult>(
+    '/admin/photo-library/backfill-jobs',
+    input,
+  );
+}
+
 export function syncPhotoAiDetailApi(photoId: string) {
   return requestClient.post<PhotoCenterItem>(
     `/admin/photo-library/photos/${encodeURIComponent(photoId)}/ai-sync`,
@@ -590,8 +611,11 @@ export function updatePhotoMetadataApi(
   input: {
     captionTitle?: string;
     importAlbumTitle?: string;
+    location?: string;
     sourceAlbumKind?: PhotoCenterSourceAlbumKind;
     sourceOwnerName?: string;
+    takenAt?: string;
+    weather?: string;
   },
 ) {
   return requestClient.request<PhotoCenterItem>(

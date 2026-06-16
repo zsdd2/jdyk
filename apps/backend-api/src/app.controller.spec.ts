@@ -37,6 +37,19 @@ function restoreEnv(key: string, value: string | undefined): void {
   process.env[key] = value;
 }
 
+function expectSignedAssetUrl(
+  actual: string | undefined,
+  expectedPath: string,
+  expectedSearchParams: Record<string, string> = {},
+): void {
+  const parsed = new URL(actual ?? '', 'http://localhost');
+  expect(parsed.pathname).toBe(expectedPath);
+  for (const [key, value] of Object.entries(expectedSearchParams)) {
+    expect(parsed.searchParams.get(key)).toBe(value);
+  }
+  expect(parsed.searchParams.get('assetToken')).toBeTruthy();
+}
+
 describe('AppController', () => {
   const testDataDir = join(process.cwd(), '.test-data', 'app-controller');
   const derivativeRoot = join(testDataDir, 'derivatives');
@@ -395,12 +408,64 @@ describe('AppController', () => {
         username: 'admin',
       });
 
-      expect(login).toEqual({
-        code: 0,
-        data: {
-          accessToken: 'wrjdyk_admin_admin',
-        },
-      });
+      expect(login.code).toBe(0);
+      expect(login.data.accessToken).toMatch(/^wrjdyk_admin\./);
+      expect(login.data.accessToken).not.toBe('wrjdyk_admin_admin');
+      expect(appService.validateAdminToken(`Bearer ${login.data.accessToken}`)).toBe(true);
+    });
+
+    it('rejects the built-in default admin password in production', () => {
+      const previousEnv = {
+        adminPassword: process.env.WRJDYK_ADMIN_PASSWORD,
+        nodeEnv: process.env.NODE_ENV,
+      };
+      delete process.env.WRJDYK_ADMIN_PASSWORD;
+      process.env.NODE_ENV = 'production';
+
+      try {
+        expect(() =>
+          appController.loginAdmin({
+            password: 'admin123',
+            username: 'admin',
+          }),
+        ).toThrow(UnauthorizedException);
+        expect(() =>
+          appController.loginDevice({
+            password: 'admin123',
+            username: 'admin',
+          }),
+        ).toThrow(UnauthorizedException);
+      } finally {
+        restoreEnv('WRJDYK_ADMIN_PASSWORD', previousEnv.adminPassword);
+        restoreEnv('NODE_ENV', previousEnv.nodeEnv);
+      }
+    });
+
+    it('uses the configured admin password for both console and TV device login', () => {
+      const previousAdminPassword = process.env.WRJDYK_ADMIN_PASSWORD;
+      process.env.WRJDYK_ADMIN_PASSWORD = 'configured-secret';
+
+      try {
+        const adminLogin = appController.loginAdmin({
+          password: 'configured-secret',
+          username: 'admin',
+        });
+        const deviceLogin = appController.loginDevice({
+          password: 'configured-secret',
+          username: 'admin',
+        });
+
+        expect(adminLogin.data.accessToken).toMatch(/^wrjdyk_admin\./);
+        expect(deviceLogin.deviceToken).toMatch(/^dt_[a-f0-9]{48}$/);
+        expect(() =>
+          appController.loginDevice({
+            password: 'admin123',
+            username: 'admin',
+          }),
+        ).toThrow(UnauthorizedException);
+      } finally {
+        restoreEnv('WRJDYK_ADMIN_PASSWORD', previousAdminPassword);
+      }
     });
 
     it('returns Vben-compatible user info and menus', () => {
@@ -580,6 +645,21 @@ describe('AppController', () => {
       });
     });
 
+    it('signs photo center asset URLs for browser image loading', () => {
+      const result = appController.getAdminPhotoCenterItems({
+        albumId: 'family-travel',
+        page: '1',
+        pageSize: '1',
+      });
+      const thumbnailUrl = result.data.items[0]?.thumbnailUrl ?? '';
+      const parsed = new URL(thumbnailUrl, 'http://localhost');
+      const assetToken = parsed.searchParams.get('assetToken') ?? '';
+
+      expect(parsed.pathname).toBe('/api/photos/p_001/thumb');
+      expect(assetToken).toBeTruthy();
+      expect(appService.validatePhotoAssetToken(parsed.pathname, assetToken)).toBe(true);
+    });
+
     it('creates playback albums and adds selected photo center photos', () => {
       const created = appController.createAdminPlaybackAlbum({
         aiEnabled: true,
@@ -642,6 +722,8 @@ describe('AppController', () => {
           }),
         ],
       });
+      expectSignedAssetUrl(albums.data[0]?.thumbnailUrl, '/api/photos/p_001/thumb');
+      expectSignedAssetUrl(albums.data[0]?.coverImageUrl, '/api/photos/p_001/display');
       expect(members).toEqual({
         code: 0,
         data: [
@@ -907,8 +989,11 @@ describe('AppController', () => {
       });
       expect(members.data[0]).toMatchObject({
         derivativeStatus: 'ready',
-        thumbnailUrl: '/api/derivatives/feiniu-95629/thumb_300.webp',
       });
+      expectSignedAssetUrl(
+        members.data[0]?.thumbnailUrl,
+        '/api/derivatives/feiniu-95629/thumb_300.webp',
+      );
       expect(
         existsSync(join(derivativeRoot, 'feiniu-95629', 'thumb_300.webp')),
       ).toBe(true);
@@ -1024,8 +1109,11 @@ describe('AppController', () => {
       expect(members.data[0]).toMatchObject({
         aiCompleted: false,
         derivativeStatus: 'ready',
-        thumbnailUrl: '/api/derivatives/p_001/thumb_300.webp',
       });
+      expectSignedAssetUrl(
+        members.data[0]?.thumbnailUrl,
+        '/api/derivatives/p_001/thumb_300.webp',
+      );
     });
 
     it('manually scans a playback album by replacing legacy ready TV derivatives', async () => {
@@ -1066,6 +1154,99 @@ describe('AppController', () => {
       expect(
         existsSync(join(derivativeRoot, 'p_001', 'tv_blur_fill.webp')),
       ).toBe(true);
+    });
+
+    it('backfills pending photo center derivatives and AI insights in one tracked job', async () => {
+      appService.replaceVisionAiForTesting({
+        analyze: async () => ({
+          aiBeautyScore: 86,
+          aiComment: '补齐后的家庭回忆',
+          aiFontStyle: 'handwriting',
+          aiIsTrash: false,
+          aiLayoutPosition: 'bottom_right',
+          aiMemoryScore: 91,
+          aiReason: '本地扫描照片补齐成功。',
+          aiSafeArea: { h: 0.18, w: 0.34, x: 0.58, y: 0.7 },
+          aiScore: 88,
+          aiTags: ['回忆', '补齐'],
+          aiTextColor: '#FFFFFF',
+        }),
+      });
+
+      const job = await appService.createPhotoCenterBackfillJob({
+        jobId: 'backfill_test_job',
+        limit: 2,
+      });
+      const photos = appController.getAdminPhotoCenterItems({
+        page: '1',
+        pageSize: '20',
+      });
+      const tasks = appController.getAdminAiRecognitionTasks();
+
+      expect(job).toEqual(expect.objectContaining({
+        generatedPhotoCount: expect.any(Number),
+        jobId: 'backfill_test_job',
+        requestedPhotoCount: expect.any(Number),
+        status: 'completed',
+        transcodedPhotoCount: expect.any(Number),
+      }));
+      expect(job.requestedPhotoCount).toBeGreaterThan(0);
+      expect(job.generatedPhotoCount).toBe(job.requestedPhotoCount);
+      expect(job.transcodedPhotoCount).toBeGreaterThan(0);
+      expect(photos.data.items[0]).toEqual(expect.objectContaining({
+        aiComment: '补齐后的家庭回忆',
+        aiCommentStatus: 'completed',
+        aiScoreStatus: 'completed',
+        derivativeStatus: 'ready',
+      }));
+      expect(tasks.data).toEqual([
+        expect.objectContaining({
+          completedPhotoCount: job.requestedPhotoCount,
+          jobId: 'backfill_test_job',
+          requestedPhotoCount: job.requestedPhotoCount,
+          status: 'completed',
+          targetTitle: '照片中心补齐',
+          targetType: 'backfill',
+        }),
+      ]);
+    }, 15_000);
+
+    it('queues a photo center backfill job from the admin controller', () => {
+      jest.spyOn(appService, 'createPhotoCenterBackfillJob').mockResolvedValue({
+        failedPhotoCount: 0,
+        finishedAt: '',
+        generatedPhotoCount: 0,
+        importedSourcePhotoCount: 0,
+        jobId: 'backfill_mock',
+        requestedPhotoCount: 0,
+        skippedPhotoCount: 0,
+        startedAt: '',
+        status: 'completed',
+        targetPhotoCount: 0,
+        transcodedPhotoCount: 0,
+      });
+
+      const job = appController.createAdminPhotoCenterBackfillJob({
+        limit: 2,
+      });
+
+      expect(job).toEqual({
+        code: 0,
+        data: expect.objectContaining({
+          generatedPhotoCount: 0,
+          jobId: expect.stringMatching(/^backfill_/),
+          requestedPhotoCount: 0,
+          status: 'queued',
+          targetPhotoCount: 0,
+          transcodedPhotoCount: 0,
+        }),
+      });
+      expect(appService.createPhotoCenterBackfillJob).toHaveBeenCalledWith(
+        expect.objectContaining({
+          jobId: expect.stringMatching(/^backfill_/),
+          limit: 2,
+        }),
+      );
     });
 
     it('does not enumerate Feiniu photos while listing the photo center', async () => {
@@ -1275,8 +1456,11 @@ describe('AppController', () => {
       const updated = appController.updateAdminPhotoMetadata('p_001', {
         captionTitle: 'Edited family photo',
         importAlbumTitle: 'Edited source album',
+        location: '杭州西湖区',
         sourceAlbumKind: 'owned',
         sourceOwnerName: 'admin',
+        takenAt: '2026-06-16',
+        weather: '晴',
       });
       const trashed = appController.trashAdminPhoto('p_001');
       const center = appController.getAdminPhotoCenterItems({
@@ -1291,10 +1475,13 @@ describe('AppController', () => {
       expect(updated.data).toMatchObject({
         captionTitle: 'Edited family photo',
         importAlbumTitle: 'Edited source album',
+        location: '杭州西湖区',
         photoId: 'p_001',
         sourceAlbumKind: 'owned',
         sourceOwnerName: 'admin',
+        takenAt: '2026-06-16',
       });
+      expect(updated.data.aiDetail).toContain('"weather":"晴"');
       expect(trashed).toEqual({
         code: 0,
         data: { trashedPhotoCount: 1 },
@@ -1497,6 +1684,60 @@ describe('AppController', () => {
       });
     });
 
+    it('recovers unfinished AI recognition tasks when the backend service starts', () => {
+      const staleRepository = new SqlitePhotoRepository({
+        databasePath,
+        derivativeRoot,
+        photoRoot,
+      });
+      staleRepository.upsertAiRecognitionTask({
+        activePhotoId: 'p_001',
+        activePhotoName: '_DSC6456.jpg',
+        albumId: 'family-travel',
+        albumTitle: '家庭旅行',
+        completedPhotoCount: 0,
+        createdAt: '2026-06-11T10:00:00.000Z',
+        error: '',
+        failedPhotoCount: 0,
+        finishedAt: '',
+        jobId: 'ai_task_interrupted_restart',
+        lastUpdatedAt: '2026-06-11T10:00:10.000Z',
+        requestedPhotoCount: 1,
+        skippedPhotoCount: 0,
+        status: 'running',
+        targetId: 'p_001',
+        targetTitle: '_DSC6456',
+        targetType: 'photo',
+      });
+      staleRepository.close();
+
+      const restartedService = new AppService();
+      restartedService.replacePhotoRepositoryForTesting(
+        new SqlitePhotoRepository({
+          databasePath,
+          derivativeRoot,
+          photoRoot,
+        }),
+      );
+
+      try {
+        (restartedService as AppService & { onModuleInit(): void }).onModuleInit();
+
+        expect(restartedService.listAiRecognitionTasks()).toEqual([
+          expect.objectContaining({
+            activePhotoId: '',
+            activePhotoName: '',
+            error: 'Backend restarted before the AI task finished. Please retry the task.',
+            failedPhotoCount: 1,
+            jobId: 'ai_task_interrupted_restart',
+            status: 'failed',
+          }),
+        ]);
+      } finally {
+        restartedService.close();
+      }
+    });
+
     it('stores separate memory and beauty push thresholds for playback albums', async () => {
       const created = appController.createAdminPlaybackAlbum({
         aiEnabled: true,
@@ -1653,17 +1894,27 @@ describe('AppController', () => {
           tags: ['人物', '开心', '家庭'],
         }),
         display: expect.objectContaining({
-          aiImageUrl: '/api/derivatives/p_001/ai_720.webp',
           fontStyle: 'handwriting',
           textColor: '#FFFFFF',
-          tvImageUrl: '/api/derivatives/p_001/tv_blur_fill.webp',
         }),
-        displayImageUrl: '/api/photos/p_001/display?source=ceshi',
         layout: expect.objectContaining({
           position: 'right_bottom',
           safeArea: { h: 0.18, w: 0.34, x: 0.58, y: 0.7 },
         }),
       });
+      expectSignedAssetUrl(
+        playlist.items[0]?.display.aiImageUrl,
+        '/api/derivatives/p_001/ai_720.webp',
+      );
+      expectSignedAssetUrl(
+        playlist.items[0]?.display.tvImageUrl,
+        '/api/derivatives/p_001/tv_blur_fill.webp',
+      );
+      expectSignedAssetUrl(
+        playlist.items[0]?.displayImageUrl,
+        '/api/photos/p_001/display',
+        { source: 'ceshi' },
+      );
     });
 
     it('normalizes the latest TV layout prompt typography shape for playback metadata', () => {
@@ -1743,7 +1994,7 @@ describe('AppController', () => {
           aiComment: [
             'A warm family moment',
             'The room still feels bright',
-            'A small ',
+            'A small da',
           ].join('\n'),
           aiFontStyle: 'handwriting',
           aiLayoutPosition: 'center_safe',
@@ -1926,7 +2177,7 @@ describe('AppController', () => {
       ).toBe('日本');
     });
 
-    it('limits the third narration line to eight Chinese characters', () => {
+    it('limits the third narration line to ten Chinese characters', () => {
       const narrationOptions = Array.from({ length: 5 }, (_, index) => ({
         closing_line: `这一天被晚风慢慢收好${index + 1}`,
         handwritten_line: `街角的光还在心里${index + 1}`,
@@ -1959,8 +2210,8 @@ describe('AppController', () => {
         selected_narration_index: 0,
       });
 
-      expect(insight.aiComment.split('\n')[2]).toBe('这一天被晚风慢慢');
-      expect(insight.aiNarrationVariants?.[0]?.lyricalClosure).toBe('这一天被晚风慢慢');
+      expect(insight.aiComment.split('\n')[2]).toBe('这一天被晚风慢慢收好');
+      expect(insight.aiNarrationVariants?.[0]?.lyricalClosure).toBe('这一天被晚风慢慢收好');
     });
 
     it('appends the standard output contract after the business prompt as the final override', () => {
@@ -2153,12 +2404,12 @@ describe('AppController', () => {
       });
 
       expect(insight.aiComment).toBe(
-        '小手翻开彩色绘本1\n那天读过的故事，还在慢慢长大1\n午后的光没有走远',
+        '小手翻开彩色绘本1\n那天读过的故事，还在慢慢长大1\n午后的光没有走远1',
       );
       expect(insight.aiNarrationVariants).toHaveLength(5);
       expect(insight.aiNarrationVariants?.[4]).toEqual({
         handwrittenThought: '那天读过的故事，还在慢慢长大5',
-        lyricalClosure: '午后的光没有走远',
+        lyricalClosure: '午后的光没有走远5',
         sceneDescription: '小手翻开彩色绘本5',
       });
     });
@@ -2206,7 +2457,7 @@ describe('AppController', () => {
       expect(insight).toEqual(
         expect.objectContaining({
           aiBeautyScore: 88,
-          aiComment: '院中亲友围坐合影3\n旧院里的笑声，轻轻落在心上3\n风把那天慢慢收好',
+          aiComment: '院中亲友围坐合影3\n旧院里的笑声，轻轻落在心上3\n风把那天慢慢收好3',
           aiFontStyle: 'handwriting',
           aiLayoutPosition: 'top_right',
           aiMemoryScore: 94,
@@ -2261,7 +2512,7 @@ describe('AppController', () => {
       expect(insight).toEqual(
         expect.objectContaining({
           aiBeautyScore: 80,
-          aiComment: '红色礼篮摆在地上3\n大家站在一起，热闹就有了形状3\n日子也跟着亮起来',
+          aiComment: '红色礼篮摆在地上3\n大家站在一起，热闹就有了形状3\n日子也跟着亮起来3',
           aiFontStyle: 'handwriting',
           aiLayoutPosition: 'top_left',
           aiMemoryScore: 89,
@@ -2438,7 +2689,11 @@ describe('AppController', () => {
         title: 'TV 播放闭环相册',
       });
       expect(albumDetail.items).toHaveLength(1);
-      expect(albumDetail.items[0]?.displayImageUrl).toBe('/api/photos/p_001/display?source=ceshi');
+      expectSignedAssetUrl(
+        albumDetail.items[0]?.displayImageUrl,
+        '/api/photos/p_001/display',
+        { source: 'ceshi' },
+      );
       expect(playlist.items[0]).toMatchObject({
         ai: expect.objectContaining({
           commentStatus: 'completed',
@@ -2447,15 +2702,23 @@ describe('AppController', () => {
         caption: expect.objectContaining({
           text: expect.any(String),
         }),
-        display: expect.objectContaining({
-          aiImageUrl: '/api/derivatives/p_001/ai_720.webp',
-          tvImageUrl: '/api/derivatives/p_001/tv_blur_fill.webp',
-        }),
-        displayImageUrl: '/api/photos/p_001/display?source=ceshi',
         layout: expect.objectContaining({
           safeArea: expect.any(Object),
         }),
       });
+      expectSignedAssetUrl(
+        playlist.items[0]?.display.aiImageUrl,
+        '/api/derivatives/p_001/ai_720.webp',
+      );
+      expectSignedAssetUrl(
+        playlist.items[0]?.display.tvImageUrl,
+        '/api/derivatives/p_001/tv_blur_fill.webp',
+      );
+      expectSignedAssetUrl(
+        playlist.items[0]?.displayImageUrl,
+        '/api/photos/p_001/display',
+        { source: 'ceshi' },
+      );
     });
 
     it('updates a photo AI comment for manual curation', () => {
@@ -2496,7 +2759,29 @@ describe('AppController', () => {
       const playlist = appController.getPlaylist(undefined, login.deviceToken);
 
       expect(playlist.items).toHaveLength(9);
-      expect(playlist.items[0]?.displayImageUrl).toBe('/api/photos/p_001/display?source=ceshi');
+      expectSignedAssetUrl(
+        playlist.items[0]?.displayImageUrl,
+        '/api/photos/p_001/display',
+        { source: 'ceshi' },
+      );
+    });
+
+    it('issues a random persisted device token instead of a predictable login token', () => {
+      const firstLogin = appController.loginDevice({
+        deviceUniqueId: 'living-room-tv',
+        password: 'admin123',
+        username: 'admin',
+      });
+      const secondLogin = appController.loginDevice({
+        deviceUniqueId: 'living-room-tv',
+        password: 'admin123',
+        username: 'admin',
+      });
+
+      expect(firstLogin.deviceToken).toMatch(/^dt_[a-f0-9]{48}$/);
+      expect(firstLogin.deviceToken).not.toBe('dt_login_admin_living-room-tv');
+      expect(secondLogin.deviceToken).toBe(firstLogin.deviceToken);
+      expect(appController.getPlaylist(undefined, firstLogin.deviceToken).items).toHaveLength(9);
     });
 
     it('returns protected album list for a valid device token', () => {
@@ -2643,6 +2928,10 @@ describe('AppController', () => {
     });
 
     it('rejects missing album detail requests from async photo sources', async () => {
+      const session = appController.createDeviceBindSession({});
+      const bound = appController.confirmDeviceBindSession(session.bindCode, {
+        deviceName: 'Async source test TV',
+      });
       const asyncSource: PhotoSource = {
         getAlbum: async () => null,
         id: 'async-test',
@@ -2650,13 +2939,9 @@ describe('AppController', () => {
         listPlaylistItems: async () => [],
       };
       appService.replacePhotoSourceForTesting(asyncSource);
-      const login = appController.loginDevice({
-        password: 'admin123',
-        username: 'admin',
-      });
 
       await expect(
-        Promise.resolve(appController.getAlbum('missing-album', login.deviceToken)),
+        Promise.resolve(appController.getAlbum('missing-album', bound.deviceToken)),
       ).rejects.toThrow(NotFoundException);
     });
 

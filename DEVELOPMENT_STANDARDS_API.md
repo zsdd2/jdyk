@@ -1,6 +1,6 @@
 # 往日重现开发规范、API 与固定流程
 
-更新时间：2026-06-13
+更新时间：2026-06-16
 
 本文是项目开发规范、接口目录和固定工作流的唯一权威入口。所有进度、风险和计划只写入 `PROJECT_DEVELOPMENT.md`；所有规范、API、发布、验证流程只写入本文。
 
@@ -47,12 +47,18 @@ CodeGraph 审计时间：2026-06-13。
 | 后端 API | `http://127.0.0.1:3999/api` |
 | 管理后台 | `http://127.0.0.1:5200` |
 | Android TV 默认后端 | `http://192.168.10.188:3999` |
-| 管理后台开发账号 | `admin / admin123` |
+| 管理后台开发账号 | 本地开发默认 `admin / admin123`；生产环境必须设置 `WRJDYK_ADMIN_PASSWORD` |
 
 固定启动脚本：
 
 - `scripts/dev/start-backend-3999.cmd`
 - `scripts/dev/start-admin-5200.cmd`
+
+账号与口令约定：
+
+- 管理端登录 `/api/auth/login` 与 TV 设备登录 `/api/device/login` 共用 `WRJDYK_ADMIN_USERNAME` / `WRJDYK_ADMIN_PASSWORD`。
+- 未设置 `WRJDYK_ADMIN_PASSWORD` 时，仅非生产运行态保留本地开发默认口令 `admin123`。
+- `NODE_ENV=production` 且未设置 `WRJDYK_ADMIN_PASSWORD` 时，默认口令不可用，管理端与 TV 设备登录都会被拒绝。
 
 ## 4. 主要业务 API
 

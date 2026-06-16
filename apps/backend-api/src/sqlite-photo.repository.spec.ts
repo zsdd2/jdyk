@@ -417,6 +417,107 @@ describe('SqlitePhotoRepository', () => {
     expect(repository.listAiRecognitionTasks()).toEqual([]);
   });
 
+  it('marks unfinished AI recognition tasks as failed after a backend restart', () => {
+    repository = new SqlitePhotoRepository({
+      databasePath,
+      photoRoot,
+    });
+
+    for (const status of ['queued', 'running', 'retrying'] as const) {
+      repository.upsertAiRecognitionTask({
+        activePhotoId: 'p_001',
+        activePhotoName: '_DSC6456.jpg',
+        albumId: 'family-travel',
+        albumTitle: '家庭旅行',
+        completedPhotoCount: 0,
+        createdAt: `2026-06-11T10:0${status.length % 3}:00.000Z`,
+        error: '',
+        failedPhotoCount: 0,
+        finishedAt: '',
+        jobId: `ai_task_${status}`,
+        lastUpdatedAt: `2026-06-11T10:0${status.length % 3}:10.000Z`,
+        requestedPhotoCount: 1,
+        skippedPhotoCount: 0,
+        status,
+        targetId: 'p_001',
+        targetTitle: '_DSC6456',
+        targetType: 'photo',
+      });
+    }
+    repository.upsertAiRecognitionTask({
+      activePhotoId: '',
+      activePhotoName: '',
+      albumId: 'family-travel',
+      albumTitle: '家庭旅行',
+      completedPhotoCount: 1,
+      createdAt: '2026-06-11T10:10:00.000Z',
+      error: '',
+      failedPhotoCount: 0,
+      finishedAt: '2026-06-11T10:10:30.000Z',
+      jobId: 'ai_task_completed',
+      lastUpdatedAt: '2026-06-11T10:10:30.000Z',
+      requestedPhotoCount: 1,
+      skippedPhotoCount: 0,
+      status: 'completed',
+      targetId: 'p_002',
+      targetTitle: '_DSC6457',
+      targetType: 'photo',
+    });
+
+    expect(repository.recoverInterruptedAiRecognitionTasks('2026-06-11T11:00:00.000Z')).toEqual({
+      recoveredTaskCount: 3,
+    });
+
+    const tasks = repository.listAiRecognitionTasks(10);
+    expect(
+      tasks
+        .filter((task) => task.jobId !== 'ai_task_completed')
+        .map((task) => ({
+          activePhotoId: task.activePhotoId,
+          activePhotoName: task.activePhotoName,
+          error: task.error,
+          failedPhotoCount: task.failedPhotoCount,
+          finishedAt: task.finishedAt,
+          jobId: task.jobId,
+          status: task.status,
+        })),
+    ).toEqual([
+      {
+        activePhotoId: '',
+        activePhotoName: '',
+        error: 'Backend restarted before the AI task finished. Please retry the task.',
+        failedPhotoCount: 1,
+        finishedAt: '2026-06-11T11:00:00.000Z',
+        jobId: 'ai_task_retrying',
+        status: 'failed',
+      },
+      {
+        activePhotoId: '',
+        activePhotoName: '',
+        error: 'Backend restarted before the AI task finished. Please retry the task.',
+        failedPhotoCount: 1,
+        finishedAt: '2026-06-11T11:00:00.000Z',
+        jobId: 'ai_task_running',
+        status: 'failed',
+      },
+      {
+        activePhotoId: '',
+        activePhotoName: '',
+        error: 'Backend restarted before the AI task finished. Please retry the task.',
+        failedPhotoCount: 1,
+        finishedAt: '2026-06-11T11:00:00.000Z',
+        jobId: 'ai_task_queued',
+        status: 'failed',
+      },
+    ]);
+    expect(
+      tasks.find((task) => task.jobId === 'ai_task_completed'),
+    ).toMatchObject({
+      finishedAt: '2026-06-11T10:10:30.000Z',
+      status: 'completed',
+    });
+  });
+
   it('lists photo center items with source, album, and AI statuses', () => {
     repository = new SqlitePhotoRepository({
       databasePath,
@@ -500,6 +601,61 @@ describe('SqlitePhotoRepository', () => {
     ]);
     expect(repository.getPhotoAsset('scan_001')).toMatchObject({
       filename: 'first.jpg',
+    });
+  });
+
+  it('preserves local scan photo AI and derivative status when rescanning the same files', () => {
+    const scanRoot = join(testDataDir, 'rescan-root');
+    mkdirSync(scanRoot, { recursive: true });
+    writeFileSync(join(scanRoot, 'first.jpg'), 'fake jpg');
+    writeFileSync(join(scanRoot, 'second.png'), 'fake png');
+
+    repository = new SqlitePhotoRepository({
+      databasePath,
+      photoRoot: scanRoot,
+    });
+
+    repository.rebuildFromPhotoRoot();
+    const database = new DatabaseSync(databasePath);
+    try {
+      database
+        .prepare(
+          `
+            UPDATE photos
+            SET
+              ai_score = 91,
+              ai_score_status = 'completed',
+              ai_comment = '保留这张照片的 AI 旁白',
+              ai_comment_status = 'completed',
+              ai_tags = '["家庭"]',
+              derivative_status = 'ready',
+              thumbnail_300_url = '/api/derivatives/scan_001/thumb_300.webp',
+              ai_720_url = '/api/derivatives/scan_001/ai_720.webp',
+              tv_4k_webp_url = '/api/derivatives/scan_001/tv_blur_fill.webp'
+            WHERE photo_id = 'scan_001'
+          `,
+        )
+        .run();
+    } finally {
+      database.close();
+    }
+
+    repository.rebuildFromPhotoRoot();
+    const photo = repository.listPhotoCenterItems({
+      keyword: 'scan_001',
+      page: 1,
+      pageSize: 1,
+    }).items[0];
+
+    expect(photo).toMatchObject({
+      aiComment: '保留这张照片的 AI 旁白',
+      aiCommentStatus: 'completed',
+      aiScore: 91,
+      aiScoreStatus: 'completed',
+      aiTags: ['家庭'],
+      derivativeStatus: 'ready',
+      photoId: 'scan_001',
+      thumbnailUrl: '/api/derivatives/scan_001/thumb_300.webp',
     });
   });
 
