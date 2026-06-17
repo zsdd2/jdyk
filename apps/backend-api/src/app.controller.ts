@@ -37,7 +37,7 @@ import type {
   PlaylistResponse,
 } from '@wrjdyk/shared';
 import { AppService } from './app.service';
-import type { PhotoCenterBackfillJobInput } from './app.service';
+import type { AdminPasswordChangeInput, PhotoCenterBackfillJobInput } from './app.service';
 import type { FeiniuConnectivityInput } from './photo-sources/feiniu/feiniu-config';
 import { isPromiseLike } from './photo-sources/photo-source';
 import type {
@@ -171,14 +171,28 @@ export class AppController {
 
   @Post('auth/login')
   loginAdmin(@Body() input: DeviceLoginInput) {
-    const accessToken = this.appService.authenticateAdmin(input);
-    if (!accessToken) throw new UnauthorizedException('Invalid username or password');
+    const result = this.appService.authenticateAdmin(input);
+    if (!result) throw new UnauthorizedException('Invalid username or password');
 
     return {
       code: 0,
-      data: {
-        accessToken,
-      },
+      data: result,
+    };
+  }
+
+  @Post('auth/password')
+  changeAdminPassword(
+    @Headers('authorization') authorization: string | undefined,
+    @Body() input: AdminPasswordChangeInput,
+  ) {
+    const result = this.appService.changeAdminPassword(authorization, input);
+    if (!result) {
+      throw new BadRequestException('Invalid current password or new password');
+    }
+
+    return {
+      code: 0,
+      data: result,
     };
   }
 

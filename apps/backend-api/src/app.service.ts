@@ -1,5 +1,5 @@
 import { Injectable, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
-import { createHash, createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
+import { createHash, createHmac, randomBytes, scryptSync, timingSafeEqual } from 'node:crypto';
 import {
   existsSync,
   mkdirSync,
@@ -232,6 +232,20 @@ export interface TvReleaseUploadInput {
   versionName?: string;
 }
 
+export interface AdminAuthResult {
+  accessToken: string;
+  mustChangePassword: boolean;
+}
+
+export interface AdminPasswordChangeInput {
+  currentPassword?: string;
+  newPassword?: string;
+}
+
+export interface AdminTokenValidationOptions {
+  allowPasswordChangeRequired?: boolean;
+}
+
 const realPhotoFiles = [
   '_DSC6456.jpg',
   '_DSC6463.jpg',
@@ -389,31 +403,67 @@ export class AppService implements OnModuleDestroy, OnModuleInit {
     this.photoSources.close();
   }
 
-  authenticateAdmin(input: DeviceLoginInput): string | null {
+  authenticateAdmin(input: DeviceLoginInput): AdminAuthResult | null {
     const username = input.username.trim().toLowerCase();
-    const adminPassword = getAdminPassword();
+    const credential = this.getAdminCredentialState();
     if (
-      !adminPassword ||
-      username !== getAdminUsername() ||
-      input.password !== adminPassword
+      username !== credential.username ||
+      !this.verifyAdminPassword(input.password, credential)
     ) {
       return null;
     }
-    return createAdminAccessToken(username);
+    return {
+      accessToken: createAdminAccessToken(username, credential.mustChangePassword),
+      mustChangePassword: credential.mustChangePassword,
+    };
   }
 
   refreshAdminToken(authorizationHeader?: string): string | null {
     const payload = verifyAdminAccessToken(
       normalizeDeviceToken(undefined, authorizationHeader),
     );
-    return payload ? createAdminAccessToken(payload.sub) : null;
+    if (!payload || payload.sub !== this.getAdminCredentialState().username) return null;
+    return createAdminAccessToken(payload.sub, payload.mustChangePassword);
   }
 
-  validateAdminToken(authorizationHeader?: string): boolean {
+  validateAdminToken(
+    authorizationHeader?: string,
+    options: AdminTokenValidationOptions = {},
+  ): boolean {
     const token = normalizeDeviceToken(undefined, authorizationHeader);
     if (!token) return false;
     const payload = verifyAdminAccessToken(token);
-    return payload?.sub === getAdminUsername();
+    if (payload?.sub !== this.getAdminCredentialState().username) return false;
+    return options.allowPasswordChangeRequired === true || !payload.mustChangePassword;
+  }
+
+  changeAdminPassword(
+    authorizationHeader: string | undefined,
+    input: AdminPasswordChangeInput,
+  ): { mustChangePassword: boolean } | null {
+    const token = normalizeDeviceToken(undefined, authorizationHeader);
+    const payload = verifyAdminAccessToken(token);
+    const credential = this.getAdminCredentialState();
+    const newPassword = input.newPassword?.trim() ?? '';
+    if (payload?.sub !== credential.username) return null;
+    if (!payload.mustChangePassword && !this.validateAdminToken(authorizationHeader)) {
+      return null;
+    }
+    if (!this.verifyAdminPassword(input.currentPassword ?? '', credential)) {
+      return null;
+    }
+    if (newPassword.length < 8 || newPassword === initialAdminPassword) {
+      return null;
+    }
+
+    const passwordSalt = randomBytes(16).toString('hex');
+    const passwordHash = hashAdminPassword(newPassword, passwordSalt);
+    this.getSqliteSource().repository.updateAdminCredential({
+      passwordHash,
+      passwordSalt,
+      username: credential.username,
+    });
+    return { mustChangePassword: false };
   }
 
   validatePhotoAssetToken(path: string, token?: string): boolean {
@@ -508,11 +558,11 @@ export class AppService implements OnModuleDestroy, OnModuleInit {
 
   authenticateDevice(input: DeviceLoginInput): DeviceLoginResponse | null {
     const normalizedUsername = input.username.trim().toLowerCase();
-    const adminPassword = getAdminPassword();
+    const credential = this.getAdminCredentialState();
     if (
-      !adminPassword ||
-      normalizedUsername !== getAdminUsername() ||
-      input.password !== adminPassword
+      credential.mustChangePassword ||
+      normalizedUsername !== credential.username ||
+      !this.verifyAdminPassword(input.password, credential)
     ) {
       return null;
     }
@@ -551,6 +601,48 @@ export class AppService implements OnModuleDestroy, OnModuleInit {
       deviceName: device.deviceName,
       deviceToken: device.deviceToken,
     };
+  }
+
+  private getAdminCredentialState(): AdminCredentialState {
+    const configuredPassword = process.env.WRJDYK_ADMIN_PASSWORD?.trim();
+    const configuredUsername = getAdminUsername();
+    const storedCredential = this.getSqliteSource().repository.getAdminCredential();
+    if (storedCredential) {
+      return {
+        mustChangePassword: false,
+        passwordHash: storedCredential.passwordHash,
+        passwordSalt: storedCredential.passwordSalt,
+        type: 'hash',
+        username: storedCredential.username.trim().toLowerCase() || configuredUsername,
+      };
+    }
+    if (configuredPassword) {
+      return {
+        mustChangePassword:
+          isProductionRuntime() &&
+          configuredUsername === defaultAdminUsername &&
+          configuredPassword === initialAdminPassword,
+        password: configuredPassword,
+        type: 'plain',
+        username: configuredUsername,
+      };
+    }
+    return {
+      mustChangePassword: isProductionRuntime(),
+      password: initialAdminPassword,
+      type: 'plain',
+      username: configuredUsername,
+    };
+  }
+
+  private verifyAdminPassword(password: string, credential: AdminCredentialState): boolean {
+    if (credential.type === 'plain') {
+      return credential.password === password;
+    }
+    return constantTimeEquals(
+      hashAdminPassword(password, credential.passwordSalt),
+      credential.passwordHash,
+    );
   }
 
   validateDeviceToken(
@@ -644,7 +736,7 @@ export class AppService implements OnModuleDestroy, OnModuleInit {
       name: 'wangri-zhongxian-backend',
       status: 'ok',
       timestamp: new Date().toISOString(),
-      version: '2.0.2',
+      version: '2.0.3',
     };
   }
 
@@ -3634,14 +3726,34 @@ function normalizeBindCode(bindCode: string): string {
 interface AdminAccessTokenPayload {
   exp: number;
   iat: number;
+  mustChangePassword: boolean;
   sub: string;
 }
 
-function createAdminAccessToken(username: string): string {
+type AdminCredentialState =
+  | {
+      mustChangePassword: boolean;
+      password: string;
+      type: 'plain';
+      username: string;
+    }
+  | {
+      mustChangePassword: false;
+      passwordHash: string;
+      passwordSalt: string;
+      type: 'hash';
+      username: string;
+    };
+
+const defaultAdminUsername = 'admin';
+const initialAdminPassword = 'admin123';
+
+function createAdminAccessToken(username: string, mustChangePassword: boolean): string {
   const nowSeconds = Math.floor(Date.now() / 1000);
   const payload: AdminAccessTokenPayload = {
     exp: nowSeconds + 30 * 24 * 60 * 60,
     iat: nowSeconds,
+    mustChangePassword,
     sub: username.trim().toLowerCase(),
   };
   const encodedPayload = base64UrlEncode(JSON.stringify(payload));
@@ -3658,7 +3770,7 @@ function verifyAdminAccessToken(token: string): AdminAccessTokenPayload | null {
 
   try {
     const payload = JSON.parse(base64UrlDecode(encodedPayload)) as Partial<AdminAccessTokenPayload>;
-    if (payload.sub !== getAdminUsername()) return null;
+    if (typeof payload.sub !== 'string' || !payload.sub.trim()) return null;
     if (!Number.isFinite(payload.exp) || payload.exp! <= Math.floor(Date.now() / 1000)) {
       return null;
     }
@@ -3666,7 +3778,8 @@ function verifyAdminAccessToken(token: string): AdminAccessTokenPayload | null {
     return {
       exp: payload.exp!,
       iat: payload.iat!,
-      sub: payload.sub,
+      mustChangePassword: payload.mustChangePassword === true,
+      sub: payload.sub.trim().toLowerCase(),
     };
   } catch {
     return null;
@@ -3773,14 +3886,7 @@ function constantTimeEquals(left: string, right: string): boolean {
 }
 
 function getAdminUsername(): string {
-  return process.env.WRJDYK_ADMIN_USERNAME?.trim().toLowerCase() || 'admin';
-}
-
-function getAdminPassword(): string | null {
-  const configuredPassword = process.env.WRJDYK_ADMIN_PASSWORD?.trim();
-  if (configuredPassword) return configuredPassword;
-  if (isProductionRuntime()) return null;
-  return 'admin123';
+  return process.env.WRJDYK_ADMIN_USERNAME?.trim().toLowerCase() || defaultAdminUsername;
 }
 
 function getAdminTokenSecret(): string {
@@ -3789,6 +3895,10 @@ function getAdminTokenSecret(): string {
     process.env.WRJDYK_ADMIN_PASSWORD?.trim() ||
     'wrjdyk-local-admin-token-secret'
   );
+}
+
+function hashAdminPassword(password: string, salt: string): string {
+  return scryptSync(password, salt, 64).toString('hex');
 }
 
 function isProductionRuntime(): boolean {

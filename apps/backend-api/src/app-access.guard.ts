@@ -18,8 +18,12 @@ export class AppAccessGuard implements CanActivate {
 
     if (isPublicRoute(method, path)) return true;
 
+    if (isAdminPasswordRoute(method, path)) {
+      return this.requireAdmin(request, { allowPasswordChangeRequired: true });
+    }
+
     if (isAdminRoute(path)) {
-      return this.requireAdmin(request);
+      return this.requireAdmin(request, { allowPasswordChangeRequired: false });
     }
 
     if (isPhotoAssetRoute(path)) {
@@ -33,8 +37,11 @@ export class AppAccessGuard implements CanActivate {
     return true;
   }
 
-  private requireAdmin(request: Request): boolean {
-    if (this.appService.validateAdminToken(getAuthorization(request))) {
+  private requireAdmin(
+    request: Request,
+    options: { allowPasswordChangeRequired?: boolean } = {},
+  ): boolean {
+    if (this.appService.validateAdminToken(getAuthorization(request), options)) {
       return true;
     }
     throw new UnauthorizedException('Invalid admin token');
@@ -108,6 +115,10 @@ function isPublicRoute(method: string, path: string): boolean {
   if (method === 'GET' && path === '/device/app-update/latest') return true;
   if (method === 'GET' && /^\/releases\/[^/]+\.apk$/.test(path)) return true;
   return false;
+}
+
+function isAdminPasswordRoute(method: string, path: string): boolean {
+  return method === 'POST' && path === '/auth/password';
 }
 
 function isAdminRoute(path: string): boolean {

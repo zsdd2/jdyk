@@ -38,6 +38,19 @@ export interface PhotoScanImportResult {
   importedPhotoCount: number;
 }
 
+export interface AdminCredential {
+  passwordHash: string;
+  passwordSalt: string;
+  passwordUpdatedAt: string;
+  username: string;
+}
+
+export interface UpdateAdminCredentialInput {
+  passwordHash: string;
+  passwordSalt: string;
+  username: string;
+}
+
 export type PhotoCenterAiStatus = 'completed' | 'failed' | 'pending';
 export type PhotoCenterSourceAlbumKind = 'owned' | 'shared_by_me' | 'shared_to_me' | '';
 export type PhotoCenterSourceType = 'feiniu' | 'local';
@@ -745,6 +758,69 @@ export class SqlitePhotoRepository {
       photoCount: photoCount.count,
       photoRoot: this.photoRoot,
     };
+  }
+
+  getAdminCredential(): AdminCredential | null {
+    this.initialize();
+    const row = this.getDatabase()
+      .prepare(
+        `
+          SELECT
+            username,
+            password_hash,
+            password_salt,
+            password_updated_at
+          FROM admin_credentials
+          WHERE id = 1
+        `,
+      )
+      .get() as {
+        password_hash: string;
+        password_salt: string;
+        password_updated_at: string;
+        username: string;
+      } | undefined;
+
+    if (!row) return null;
+    return {
+      passwordHash: row.password_hash,
+      passwordSalt: row.password_salt,
+      passwordUpdatedAt: row.password_updated_at,
+      username: row.username,
+    };
+  }
+
+  updateAdminCredential(input: UpdateAdminCredentialInput): AdminCredential {
+    this.initialize();
+    const now = new Date().toISOString();
+    this.getDatabase()
+      .prepare(
+        `
+          INSERT INTO admin_credentials (
+            id,
+            username,
+            password_hash,
+            password_salt,
+            password_updated_at,
+            updated_at
+          )
+          VALUES (1, ?, ?, ?, ?, ?)
+          ON CONFLICT(id) DO UPDATE SET
+            username = excluded.username,
+            password_hash = excluded.password_hash,
+            password_salt = excluded.password_salt,
+            password_updated_at = excluded.password_updated_at,
+            updated_at = excluded.updated_at
+        `,
+      )
+      .run(
+        input.username,
+        input.passwordHash,
+        input.passwordSalt,
+        now,
+        now,
+      );
+    return this.getAdminCredential()!;
   }
 
   listAiRecognitionTasks(limit = 100): AiRecognitionTaskProgress[] {
@@ -3586,6 +3662,21 @@ export class SqlitePhotoRepository {
         database
           .prepare('INSERT INTO schema_migrations (version, name) VALUES (?, ?)')
           .run(18, 'refresh_bundled_ai_prompts');
+      }
+      if (row.version < 19) {
+        database.exec(`
+          CREATE TABLE IF NOT EXISTS admin_credentials (
+            id INTEGER PRIMARY KEY CHECK (id = 1),
+            username TEXT NOT NULL DEFAULT 'admin',
+            password_hash TEXT NOT NULL,
+            password_salt TEXT NOT NULL,
+            password_updated_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+          );
+        `);
+        database
+          .prepare('INSERT INTO schema_migrations (version, name) VALUES (?, ?)')
+          .run(19, 'admin_initial_password_setup');
       }
       database.exec('COMMIT');
     } catch (error) {

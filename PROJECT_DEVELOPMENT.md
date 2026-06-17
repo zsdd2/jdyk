@@ -1,5 +1,17 @@
 # 往日重现开发进度同步
 
+## 2026-06-17 2.0.3 初始密码强制修改与本地 APK 留档
+
+- 当前目标：把正式版首次运行策略改为可用 `admin / admin123` 登录，但登录后必须立即修改初始密码；同时把每次本地 APK 打包后的版本化副本保留到 `releases/`，并统一发布面到 `2.0.3`。
+- 当前状态：后端已新增 SQLite `admin_credentials` 表，生产首次未配置 `WRJDYK_ADMIN_PASSWORD` 且未设置 SQLite 密码时，管理端登录返回 `mustChangePassword=true`；该 token 只能访问 `POST /api/auth/password`，普通后台 API 和 TV 设备登录在改密前不可用。改密成功后新密码写入 SQLite，`admin123` 失效。管理端已新增 `/auth/change-password` 强制改密页，登录 store 遇到 `mustChangePassword` 不再拉菜单，直接跳转改密。
+- 版本收口：项目/后端/管理端版本已更新为 `2.0.3`；Android TV 已更新为 `versionCode 15 / versionName 2.0.3`；GHCR workflow、生产 env、Compose、TV README、manifest 测试和本地发布脚本已同步。
+- 本地 APK 留档：`scripts/release/verify-local-release.ps1` 已新增 `local APK copies` 步骤；每次本地发布门禁构建后都会复制 `releases/wangri-tv-<version>-debug.apk`，并根据本机是否有签名环境复制 `releases/wangri-tv-<version>.apk` 或 `releases/wangri-tv-<version>-unsigned.apk`，同时打印大小和 SHA256。
+- 最新已验证步骤：后端新增红灯测试已先失败，再实现后通过；`node_modules\.bin\jest.CMD app-access.guard.spec.ts app.controller.spec.ts sqlite-photo.repository.spec.ts --runInBand` 通过 3 个套件 117 项；`..\..\node_modules\.bin\vitest.CMD run src/app-version.spec.ts src/api/core/auth.spec.ts src/api/photo-library-tv-release.spec.ts src/preferences.spec.ts src/router/photo-library-routes.spec.ts` 通过 5 个文件 6 项；`corepack pnpm -F @wrjdyk/backend-api run build`、`corepack pnpm -F @vben/web-antd run typecheck`、`node --test scripts/android-tv/generate-update-manifest.test.mjs` 均通过。完整 `.\scripts\release\verify-local-release.ps1` 已通过，覆盖 Android manifest 测试、后端聚焦测试、Web 聚焦测试、后端 build、Web typecheck、Web production build、两套 Compose 展开、Android 构建、APK 元数据和本地 APK 留档。
+- 本地构建证据：Debug APK 为 `apps/android-tv/app/build/outputs/apk/debug/app-debug.apk`，大小 `17483624` 字节，SHA256 `1B661539CEC5A9F4CB5085F06A924E772DDB71C255FE120198FB8E20BCD4B184`；本地 Release 产物为未签名 `apps/android-tv/app/build/outputs/apk/release/app-release-unsigned.apk`，大小 `14228228` 字节，SHA256 `A7FB8D0F5DD78611456B83423D2767CA2C43DCFCA85FDCD98AAC8303E85251F7`。发布脚本已同步复制到 `releases/wangri-tv-2.0.3-debug.apk` 和 `releases/wangri-tv-2.0.3-unsigned.apk`。
+- 提交状态：功能提交已在本地创建，`main` 领先 `origin/main`；本地 tags `v2.0.3` 与 `tv-v2.0.3` 已创建。推送被本机 GitHub CLI 无效 token 阻塞，`gh auth status -h github.com` 报告 `The token in default is invalid`，`git ls-remote` 报告 `SEC_E_NO_CREDENTIALS`。
+- 下一步计划：完成 GitHub CLI 重新授权后执行 `gh auth setup-git`，再推送 `main`、`v2.0.3`、`tv-v2.0.3`，等待 GHCR 和 Android TV Release 工作流生成正式镜像与签名 APK。
+- 当前风险：真实飞牛容器覆盖尚未执行；生产上线仍需先备份 `/vol1/1000/docker/jdyk/data`，再拉取 `2.0.3` 镜像并做只读健康检查。本机 Release APK 未签名，只能作为构建验证，正式发布仍以 GitHub Actions 签名 APK 为准；远端推送需先恢复本机 GitHub 授权。
+
 ## 2026-06-16 上线覆盖前数据保护与收口清单
 
 - 当前目标：把最近多轮升级整理成上线前必须完成的门禁，确保用新镜像覆盖部署时不覆盖或丢失旧版本 SQLite、派生图、媒体缓存、APK 发布文件和设备授权数据。

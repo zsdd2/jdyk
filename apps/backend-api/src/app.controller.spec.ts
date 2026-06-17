@@ -414,7 +414,7 @@ describe('AppController', () => {
       expect(appService.validateAdminToken(`Bearer ${login.data.accessToken}`)).toBe(true);
     });
 
-    it('rejects the built-in default admin password in production', () => {
+    it('allows the built-in default admin password in production only for initial password setup', () => {
       const previousEnv = {
         adminPassword: process.env.WRJDYK_ADMIN_PASSWORD,
         nodeEnv: process.env.NODE_ENV,
@@ -423,18 +423,80 @@ describe('AppController', () => {
       process.env.NODE_ENV = 'production';
 
       try {
-        expect(() =>
-          appController.loginAdmin({
-            password: 'admin123',
-            username: 'admin',
+        const login = appController.loginAdmin({
+          password: 'admin123',
+          username: 'admin',
+        });
+
+        expect(login.data.accessToken).toMatch(/^wrjdyk_admin\./);
+        expect(login.data.mustChangePassword).toBe(true);
+        expect(
+          appService.validateAdminToken(`Bearer ${login.data.accessToken}`, {
+            allowPasswordChangeRequired: false,
           }),
-        ).toThrow(UnauthorizedException);
+        ).toBe(false);
+        expect(
+          appService.validateAdminToken(`Bearer ${login.data.accessToken}`, {
+            allowPasswordChangeRequired: true,
+          }),
+        ).toBe(true);
         expect(() =>
           appController.loginDevice({
             password: 'admin123',
             username: 'admin',
           }),
         ).toThrow(UnauthorizedException);
+      } finally {
+        restoreEnv('WRJDYK_ADMIN_PASSWORD', previousEnv.adminPassword);
+        restoreEnv('NODE_ENV', previousEnv.nodeEnv);
+      }
+    });
+
+    it('changes the initial admin password and invalidates the built-in default', () => {
+      const previousEnv = {
+        adminPassword: process.env.WRJDYK_ADMIN_PASSWORD,
+        nodeEnv: process.env.NODE_ENV,
+      };
+      delete process.env.WRJDYK_ADMIN_PASSWORD;
+      process.env.NODE_ENV = 'production';
+
+      try {
+        const login = appController.loginAdmin({
+          password: 'admin123',
+          username: 'admin',
+        });
+
+        const result = appController.changeAdminPassword(
+          `Bearer ${login.data.accessToken}`,
+          {
+            currentPassword: 'admin123',
+            newPassword: 'changed-secret',
+          },
+        );
+
+        expect(result).toEqual({
+          code: 0,
+          data: {
+            mustChangePassword: false,
+          },
+        });
+        expect(() =>
+          appController.loginAdmin({
+            password: 'admin123',
+            username: 'admin',
+          }),
+        ).toThrow(UnauthorizedException);
+
+        const changedLogin = appController.loginAdmin({
+          password: 'changed-secret',
+          username: 'admin',
+        });
+        expect(changedLogin.data.mustChangePassword).toBe(false);
+        expect(
+          appService.validateAdminToken(`Bearer ${changedLogin.data.accessToken}`, {
+            allowPasswordChangeRequired: false,
+          }),
+        ).toBe(true);
       } finally {
         restoreEnv('WRJDYK_ADMIN_PASSWORD', previousEnv.adminPassword);
         restoreEnv('NODE_ENV', previousEnv.nodeEnv);
@@ -531,7 +593,7 @@ describe('AppController', () => {
         data: expect.objectContaining({
           albumCount: 3,
           databasePath: expect.stringContaining('.sqlite'),
-          migrationVersion: 18,
+          migrationVersion: 19,
           photoCount: 9,
           photoRoot: expect.stringContaining('ceshi'),
         }),

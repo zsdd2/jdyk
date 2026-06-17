@@ -167,6 +167,10 @@ describe('SqlitePhotoRepository', () => {
           name: 'refresh_bundled_ai_prompts',
           version: 18,
         },
+        {
+          name: 'admin_initial_password_setup',
+          version: 19,
+        },
       ]);
     } finally {
       database.close();
@@ -312,7 +316,7 @@ describe('SqlitePhotoRepository', () => {
           WHERE id = 1
         `,
       ).run();
-      database.prepare('DELETE FROM schema_migrations WHERE version = 18').run();
+      database.prepare('DELETE FROM schema_migrations WHERE version >= 18').run();
     } finally {
       database.close();
     }

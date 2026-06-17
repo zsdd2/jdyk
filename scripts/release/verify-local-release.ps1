@@ -1,7 +1,7 @@
 param(
-  [string] $ImageVersion = '2.0.2',
-  [int] $TvVersionCode = 14,
-  [string] $TvVersionName = '2.0.2',
+  [string] $ImageVersion = '2.0.3',
+  [int] $TvVersionCode = 15,
+  [string] $TvVersionName = '2.0.3',
   [string] $JavaHome = 'F:\Java\OpenJDK17U-jdk_x64_windows_hotspot_17.0.19_10\jdk-17.0.19+10',
   [string] $AndroidSdk = 'F:\Android\Sdk'
 )
@@ -37,6 +37,46 @@ function Assert-FileContains {
   }
 }
 
+function Resolve-AndroidReleaseApkPath {
+  $releaseApkCandidates = @(
+    'apps/android-tv/app/build/outputs/apk/release/app-release.apk',
+    'apps/android-tv/app/build/outputs/apk/release/app-release-unsigned.apk'
+  )
+
+  foreach ($candidate in $releaseApkCandidates) {
+    if (Test-Path -LiteralPath $candidate) {
+      return $candidate
+    }
+  }
+
+  throw 'Android release APK output is missing'
+}
+
+function Write-ApkMetadata {
+  param(
+    [string] $Path
+  )
+
+  $item = Get-Item -LiteralPath $Path
+  $hash = Get-FileHash -Algorithm SHA256 -LiteralPath $item.FullName
+  Write-Host "$($item.FullName)"
+  Write-Host "  size=$($item.Length)"
+  Write-Host "  sha256=$($hash.Hash)"
+}
+
+function Copy-LocalApk {
+  param(
+    [string] $SourcePath,
+    [string] $DestinationName
+  )
+
+  $releaseDir = Join-Path $repoRoot 'releases'
+  New-Item -ItemType Directory -Force -Path $releaseDir | Out-Null
+  $destinationPath = Join-Path $releaseDir $DestinationName
+  Copy-Item -LiteralPath $SourcePath -Destination $destinationPath -Force
+  Write-ApkMetadata $destinationPath
+}
+
 Invoke-Step 'check version surfaces' {
   Assert-FileContains '.github/workflows/ghcr-images.yml' "type=raw,value=$ImageVersion" "GHCR image version is not $ImageVersion"
   Assert-FileContains 'apps/web-antd/.env.production' "VITE_ADMIN_RELEASE_VERSION=$ImageVersion" "Admin app release version is not $ImageVersion"
@@ -66,7 +106,7 @@ Invoke-Step 'android update manifest tests' {
 Invoke-Step 'backend focused tests' {
   Push-Location apps/backend-api
   try {
-    .\node_modules\.bin\jest.CMD --runInBand app.controller.spec.ts sqlite-photo.repository.spec.ts
+    .\node_modules\.bin\jest.CMD --runInBand app-access.guard.spec.ts app.controller.spec.ts sqlite-photo.repository.spec.ts
   } finally {
     Pop-Location
   }
@@ -75,7 +115,7 @@ Invoke-Step 'backend focused tests' {
 Invoke-Step 'web focused tests' {
   Push-Location apps/web-antd
   try {
-    ..\..\node_modules\.bin\vitest.CMD run src/app-version.spec.ts src/api/photo-library-tv-release.spec.ts src/preferences.spec.ts src/router/photo-library-routes.spec.ts
+    ..\..\node_modules\.bin\vitest.CMD run src/app-version.spec.ts src/api/core/auth.spec.ts src/api/photo-library-tv-release.spec.ts src/preferences.spec.ts src/router/photo-library-routes.spec.ts
   } finally {
     Pop-Location
   }
@@ -125,24 +165,35 @@ Invoke-Step 'android debug and release build' {
 }
 
 Invoke-Step 'android APK metadata' {
+  $releaseApkPath = Resolve-AndroidReleaseApkPath
   $apkPaths = @(
     'apps/android-tv/app/build/outputs/apk/debug/app-debug.apk',
-    'apps/android-tv/app/build/outputs/apk/release/app-release-unsigned.apk'
+    $releaseApkPath
   )
   foreach ($apkPath in $apkPaths) {
-    $item = Get-Item -LiteralPath $apkPath
-    $hash = Get-FileHash -Algorithm SHA256 -LiteralPath $item.FullName
-    Write-Host "$($item.FullName)"
-    Write-Host "  size=$($item.Length)"
-    Write-Host "  sha256=$($hash.Hash)"
+    Write-ApkMetadata $apkPath
   }
 
   $buildTools = Get-ChildItem (Join-Path $AndroidSdk 'build-tools') -Directory |
     Sort-Object { [version] $_.Name } -Descending |
     Select-Object -First 1
   $aapt = Join-Path $buildTools.FullName 'aapt.exe'
-  & $aapt dump badging 'apps/android-tv/app/build/outputs/apk/release/app-release-unsigned.apk' |
+  & $aapt dump badging $releaseApkPath |
     Select-String -Pattern "versionCode='$TvVersionCode' versionName='$TvVersionName'"
+}
+
+Invoke-Step 'local APK copies' {
+  $debugApkPath = 'apps/android-tv/app/build/outputs/apk/debug/app-debug.apk'
+  $releaseApkPath = Resolve-AndroidReleaseApkPath
+  $releaseApkFileName = Split-Path -Leaf $releaseApkPath
+  $releaseDestinationName = if ($releaseApkFileName -eq 'app-release.apk') {
+    "wangri-tv-$TvVersionName.apk"
+  } else {
+    "wangri-tv-$TvVersionName-unsigned.apk"
+  }
+
+  Copy-LocalApk $debugApkPath "wangri-tv-$TvVersionName-debug.apk"
+  Copy-LocalApk $releaseApkPath $releaseDestinationName
 }
 
 Write-Host ""

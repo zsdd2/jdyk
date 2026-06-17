@@ -86,7 +86,7 @@ jobs:
         with:
           images: ${{ matrix.image }}
           tags: |
-            type=raw,value=2.0.2
+            type=raw,value=2.0.3
             type=raw,value=latest,enable={{is_default_branch}}
             type=semver,pattern={{version}}
 

@@ -10,6 +10,7 @@ describe('AppAccessGuard', () => {
   let app: INestApplication;
   const appService = {
     getHealth: jest.fn(() => ({ status: 'ok' })),
+    changeAdminPassword: jest.fn(() => ({ mustChangePassword: false })),
     getPhotoAsset: jest.fn(() => ({
       contentType: 'text/plain',
       filename: 'fixture.txt',
@@ -28,9 +29,16 @@ describe('AppAccessGuard', () => {
     refreshAdminToken: jest.fn((authorization?: string) =>
       authorization === 'Bearer admin-token' ? 'admin-token-refreshed' : null,
     ),
-    validateAdminToken: jest.fn((authorization?: string) =>
-      authorization === 'Bearer admin-token',
-    ),
+    validateAdminToken: jest.fn((
+      authorization?: string,
+      options?: { allowPasswordChangeRequired?: boolean },
+    ) => {
+      if (authorization === 'Bearer admin-token') return true;
+      return (
+        authorization === 'Bearer setup-token' &&
+        options?.allowPasswordChangeRequired === true
+      );
+    }),
     validateDeviceToken: jest.fn((deviceToken?: string) =>
       deviceToken === 'device-token',
     ),
@@ -80,6 +88,22 @@ describe('AppAccessGuard', () => {
       .expect(200);
 
     expect(appService.getPhotoLibraryOverview).toHaveBeenCalledTimes(1);
+  });
+
+  it('allows password setup tokens only on the password change endpoint', async () => {
+    await request(app.getHttpServer())
+      .get('/admin/photo-library/overview')
+      .set('Authorization', 'Bearer setup-token')
+      .expect(401);
+
+    await request(app.getHttpServer())
+      .post('/auth/password')
+      .set('Authorization', 'Bearer setup-token')
+      .send({
+        currentPassword: 'admin123',
+        newPassword: 'changed-secret',
+      })
+      .expect(201);
   });
 
   it('rejects admin token refresh without a current admin token', async () => {

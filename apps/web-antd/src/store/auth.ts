@@ -33,11 +33,16 @@ export const useAuthStore = defineStore('auth', () => {
     let userInfo: null | UserInfo = null;
     try {
       loginLoading.value = true;
-      const { accessToken } = await loginApi(params);
+      const { accessToken, mustChangePassword } = await loginApi(params);
 
       // 如果成功获取到 accessToken
       if (accessToken) {
         accessStore.setAccessToken(accessToken);
+
+        if (mustChangePassword) {
+          await router.replace('/auth/change-password');
+          return { userInfo };
+        }
 
         // 获取用户信息并存储到 accessStore 中
         const [fetchUserInfoResult, accessCodes] = await Promise.all([

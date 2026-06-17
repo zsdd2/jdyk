@@ -47,18 +47,26 @@ CodeGraph 审计时间：2026-06-13。
 | 后端 API | `http://127.0.0.1:3999/api` |
 | 管理后台 | `http://127.0.0.1:5200` |
 | Android TV 默认后端 | `http://192.168.10.188:3999` |
-| 管理后台开发账号 | 本地开发默认 `admin / admin123`；生产环境必须设置 `WRJDYK_ADMIN_PASSWORD` |
+| 管理后台账号 | 本地开发默认 `admin / admin123`；生产首次未配置密码时也可用 `admin / admin123` 登录，但必须立即修改初始密码 |
 
 固定启动脚本：
 
 - `scripts/dev/start-backend-3999.cmd`
 - `scripts/dev/start-admin-5200.cmd`
 
+### 管理员初始密码
+
+- 管理员用户名默认 `admin`。
+- 生产环境未配置 `WRJDYK_ADMIN_PASSWORD` 且 SQLite 尚未保存管理员密码时，首次管理端登录允许 `admin / admin123`，并返回 `mustChangePassword=true`。
+- 初始密码状态下的 token 只能调用 `POST /api/auth/password`；普通后台 API 和 TV 设备登录会在改密完成前被阻止。
+- 修改初始密码后，新密码写入 SQLite，`admin123` 失效。
+- `WRJDYK_AUTH_SECRET` 可选，但生产环境建议固定配置，避免 token secret 随密码变化导致已有 token 异常失效。
+
 账号与口令约定：
 
-- 管理端登录 `/api/auth/login` 与 TV 设备登录 `/api/device/login` 共用 `WRJDYK_ADMIN_USERNAME` / `WRJDYK_ADMIN_PASSWORD`。
-- 未设置 `WRJDYK_ADMIN_PASSWORD` 时，仅非生产运行态保留本地开发默认口令 `admin123`。
-- `NODE_ENV=production` 且未设置 `WRJDYK_ADMIN_PASSWORD` 时，默认口令不可用，管理端与 TV 设备登录都会被拒绝。
+- 管理端登录 `/api/auth/login` 与 TV 设备登录 `/api/device/login` 共用管理员账号体系。
+- 未设置 `WRJDYK_ADMIN_PASSWORD` 且 SQLite 尚未保存管理员密码时，生产首次管理端登录允许 `admin / admin123`，但 token 只允许访问 `POST /api/auth/password`。
+- 修改初始密码后，新密码写入 SQLite，`admin123` 失效；TV 设备登录在初始密码修改完成前不可用。
 
 ## 4. 主要业务 API
 
@@ -68,6 +76,7 @@ CodeGraph 审计时间：2026-06-13。
 | --- | --- | --- |
 | `GET` | `/api/health` | 后端健康检查 |
 | `POST` | `/api/auth/login` | 管理端登录 |
+| `POST` | `/api/auth/password` | 修改初始管理员密码 |
 | `POST` | `/api/auth/refresh` | 管理端刷新令牌 |
 | `POST` | `/api/auth/logout` | 管理端退出 |
 | `GET` | `/api/user/info` | 管理端用户信息、首页路径 |

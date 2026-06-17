@@ -11,11 +11,21 @@ export namespace AuthApi {
   /** 登录接口返回值 */
   export interface LoginResult {
     accessToken: string;
+    mustChangePassword?: boolean;
   }
 
   export interface RefreshTokenResult {
     data: string;
     status: number;
+  }
+
+  export interface ChangePasswordParams {
+    currentPassword: string;
+    newPassword: string;
+  }
+
+  export interface ChangePasswordResult {
+    mustChangePassword: boolean;
   }
 }
 
@@ -24,6 +34,10 @@ export namespace AuthApi {
  */
 export async function loginApi(data: AuthApi.LoginParams) {
   return requestClient.post<AuthApi.LoginResult>('/auth/login', data);
+}
+
+export async function changeAdminPasswordApi(data: AuthApi.ChangePasswordParams) {
+  return requestClient.post<AuthApi.ChangePasswordResult>('/auth/password', data);
 }
 
 /**
