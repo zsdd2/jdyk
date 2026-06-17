@@ -3,6 +3,7 @@ package com.wangrizhongxian.tv
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Test
 import kotlinx.coroutines.runBlocking
 import okhttp3.OkHttpClient
@@ -273,6 +274,72 @@ class AlbumParsingTest {
   }
 
   @Test
+  fun savedTokenAloneDoesNotBypassCredentialLogin() {
+    assertFalse(
+      shouldAttemptStoredCredentialAutoLogin(
+        serverUrl = "http://192.168.10.166:3999",
+        username = "admin",
+        password = "",
+        autoLoginEnabled = true,
+      ),
+    )
+  }
+
+  @Test
+  fun storedCredentialsAutoLoginOnlyWhenUserEnabledIt() {
+    assertTrue(
+      shouldAttemptStoredCredentialAutoLogin(
+        serverUrl = "http://192.168.10.166:3999",
+        username = "admin",
+        password = "admin123",
+        autoLoginEnabled = true,
+      ),
+    )
+    assertFalse(
+      shouldAttemptStoredCredentialAutoLogin(
+        serverUrl = "http://192.168.10.166:3999",
+        username = "admin",
+        password = "admin123",
+        autoLoginEnabled = false,
+      ),
+    )
+  }
+
+  @Test
+  fun loginFlowStartsTheFirstPlayableAlbum() {
+    val albums = listOf(
+      TvAlbum(
+        albumId = "empty",
+        coverUrl = "",
+        description = "",
+        items = emptyList(),
+        photoCount = 0,
+        sceneCount = 0,
+        title = "空相册",
+        updatedAt = "",
+      ),
+      TvAlbum(
+        albumId = "ready",
+        coverUrl = "",
+        description = "",
+        items = listOf(
+          testPlaylistItem(
+            albumId = "ready",
+            albumName = "可播放",
+            photoId = "p1",
+          ),
+        ),
+        photoCount = 1,
+        sceneCount = 1,
+        title = "可播放",
+        updatedAt = "",
+      ),
+    )
+
+    assertEquals(1, firstPlayableAlbumIndex(albums))
+  }
+
+  @Test
   fun parseFeiniuAlbumKeepsAbsoluteMediaUrlsForTvPlayback() {
     val json = JSONObject(
       """
@@ -331,3 +398,39 @@ class AlbumParsingTest {
     assertEquals(true, isTouchActivationEnabled(TvTouchTarget.LoginButton))
   }
 }
+
+private fun testPlaylistItem(albumId: String, albumName: String, photoId: String): TvPlaylistItem =
+  TvPlaylistItem(
+    aiComment = "",
+    aiCommentStatus = "",
+    aiLocked = false,
+    aiScore = null,
+    aiScoreStatus = "",
+    aiTags = emptyList(),
+    albumId = albumId,
+    albumName = albumName,
+    animationTemplateId = "",
+    captionStyle = "",
+    captionText = "",
+    captionTitle = "照片",
+    displayTemplateId = "",
+    displayImageUrl = "/api/photos/$photoId/display",
+    durationMs = 12000,
+    aiImageUrl = "",
+    fontStyle = "",
+    fontWeight = "",
+    layoutTemplateId = "",
+    layoutPosition = "",
+    location = "",
+    mediaHeight = 1920,
+    mediaOrientation = "portrait",
+    mediaWidth = 1080,
+    narrationVariants = emptyList(),
+    photoId = photoId,
+    safeArea = TvSafeArea(0f, 0f, 1f, 1f),
+    takenAt = "",
+    textColor = "",
+    topMetaLocation = "",
+    topMetaTime = "",
+    topMetaWeather = "",
+  )

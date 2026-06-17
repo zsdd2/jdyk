@@ -1,6 +1,6 @@
 {
   "name": "@wrjdyk/backend-api",
-  "version": "2.0.4",
+  "version": "2.0.5",
   "description": "NestJS backend API for Wangri Zhongxian.",
   "author": "Wangri Zhongxian",
   "private": true,

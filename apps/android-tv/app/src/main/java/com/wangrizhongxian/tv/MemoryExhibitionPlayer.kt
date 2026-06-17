@@ -689,9 +689,7 @@ private fun cinematicCaptionDesignLines(
 }
 
 internal fun portraitLayoutVariantFor(photoId: String, sessionSeed: Int = 0): PortraitLayoutVariant {
-  val variants = PortraitLayoutVariant.entries
-  val mixedHash = photoId.hashCode() xor (sessionSeed * -0x61c88647)
-  return variants[Math.floorMod(mixedHash, variants.size)]
+  return PortraitLayoutVariant.Center
 }
 
 internal fun cinematicCaptionDesignLines(): List<CinematicCaptionLineSpec> {

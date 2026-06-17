@@ -83,6 +83,7 @@ import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.geometry.Offset
+import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
@@ -117,6 +118,8 @@ private val serverUrlKey = stringPreferencesKey("server_url")
 private val usernameKey = stringPreferencesKey("username")
 private val passwordKey = stringPreferencesKey("password")
 private val deviceTokenKey = stringPreferencesKey("device_token")
+private val rememberPasswordKey = booleanPreferencesKey("remember_password")
+private val autoLoginKey = booleanPreferencesKey("auto_login")
 
 private const val fallbackServerUrl = "http://192.168.10.188:3999"
 
@@ -176,6 +179,8 @@ private fun TvMemoryApp() {
   var serverUrl by remember { mutableStateOf(defaultServerUrl()) }
   var username by remember { mutableStateOf("admin") }
   var password by remember { mutableStateOf("admin123") }
+  var rememberPassword by remember { mutableStateOf(true) }
+  var autoLoginEnabled by remember { mutableStateOf(false) }
   var deviceToken by remember { mutableStateOf("") }
   var statusText by remember { mutableStateOf("系统已就绪，等待登录") }
   var albums by remember { mutableStateOf<List<TvAlbum>>(emptyList()) }
@@ -331,7 +336,13 @@ private fun TvMemoryApp() {
       context.settingsDataStore.edit { preferences ->
         preferences[serverUrlKey] = trimmedUrl
         preferences[usernameKey] = trimmedUsername
-        preferences[passwordKey] = trimmedPassword
+        preferences[rememberPasswordKey] = rememberPassword
+        preferences[autoLoginKey] = autoLoginEnabled
+        if (rememberPassword) {
+          preferences[passwordKey] = trimmedPassword
+        } else {
+          preferences.remove(passwordKey)
+        }
       }
 
       val deviceUniqueId = Settings.Secure.getString(
@@ -365,13 +376,38 @@ private fun TvMemoryApp() {
         return@launch
       }
 
-      albums = albumsResult.albums
-      playlistItems = albumsResult.albums.flatMap { it.items }
-      selectedAlbumIndex = 0
+      var loadedAlbums = albumsResult.albums
+      albums = loadedAlbums
+      playlistItems = loadedAlbums.flatMap { it.items }
+      selectedAlbumIndex = firstPlayableAlbumIndex(loadedAlbums).takeIf { it >= 0 } ?: 0
       selectedQueueIndex = 0
       currentItemIndex = 0
       statusText = "Backend connected: ${albumsResult.albums.size} albums"
-      screen = if (albumsResult.albums.isEmpty()) TvAppScreen.EmptyAlbums else TvAppScreen.AlbumSelection
+      if (loadedAlbums.isEmpty()) {
+        screen = TvAppScreen.EmptyAlbums
+      } else {
+        var selectedAlbum = loadedAlbums.getOrNull(selectedAlbumIndex)
+        if (selectedAlbum != null && selectedAlbum.items.isEmpty()) {
+          val detailResult = fetchAlbumDetail(trimmedUrl, loginResult.deviceToken, selectedAlbum.albumId, httpClient)
+          if (detailResult.ok && detailResult.album != null) {
+            loadedAlbums = loadedAlbums.map { currentAlbum ->
+              if (currentAlbum.albumId == detailResult.album.albumId) detailResult.album else currentAlbum
+            }
+            albums = loadedAlbums
+            playlistItems = loadedAlbums.flatMap { it.items }
+            selectedAlbumIndex = firstPlayableAlbumIndex(loadedAlbums).takeIf { it >= 0 } ?: selectedAlbumIndex
+            selectedAlbum = loadedAlbums.getOrNull(selectedAlbumIndex)
+          }
+        }
+        if (selectedAlbum == null || selectedAlbum.items.isEmpty()) {
+          screen = TvAppScreen.EmptyPlaylist
+        } else {
+          playbackStatusText = "Playing: ${selectedAlbum.title}"
+          playbackSessionSeed = playbackSessionSeed.nextPlaybackSessionSeed()
+          screen = TvAppScreen.Player
+          reportCurrentPlayback(selectedAlbum.items.first())
+        }
+      }
       if (!updateCheckedThisSession) {
         updateCheckedThisSession = true
         checkForAppUpdate(manual = false)
@@ -384,9 +420,11 @@ private fun TvMemoryApp() {
       context.settingsDataStore.edit { preferences ->
         preferences.remove(deviceTokenKey)
         preferences.remove(passwordKey)
+        preferences[autoLoginKey] = false
       }
       deviceToken = ""
       password = ""
+      autoLoginEnabled = false
       albums = emptyList()
       playlistItems = emptyList()
       selectedAlbumIndex = 0
@@ -405,12 +443,12 @@ private fun TvMemoryApp() {
       buildDefaultServerUrl = defaultServerUrl(),
     )
     username = storedSettings[usernameKey] ?: username
-    password = storedSettings[passwordKey] ?: ""
+    rememberPassword = storedSettings[rememberPasswordKey] ?: true
+    autoLoginEnabled = storedSettings[autoLoginKey] ?: false
+    password = if (rememberPassword) storedSettings[passwordKey] ?: "" else ""
     deviceToken = storedSettings[deviceTokenKey] ?: ""
-    if (serverUrl.isNotBlank() && username.isNotBlank() && password.isNotBlank()) {
+    if (shouldAttemptStoredCredentialAutoLogin(serverUrl, username, password, autoLoginEnabled)) {
       connectAndLoad(autoLogin = true)
-    } else if (deviceToken.isNotBlank()) {
-      statusText = "已读取登录状态，可选择图包"
     }
   }
 
@@ -560,14 +598,21 @@ private fun TvMemoryApp() {
 
   when (screen) {
     TvAppScreen.Login -> TvBackendLoginScreen(
-      deviceToken = deviceToken,
       onConnect = { connectAndLoad() },
+      autoLoginEnabled = autoLoginEnabled,
       onPasswordChange = { password = it },
+      onAutoLoginChange = {
+        autoLoginEnabled = it
+        if (it) rememberPassword = true
+      },
+      onRememberPasswordChange = {
+        rememberPassword = it
+        if (!it) autoLoginEnabled = false
+      },
       onServerUrlChange = { serverUrl = it },
-      onSystemInfo = { screen = TvAppScreen.SystemInfo },
-      onUseSavedToken = ::loadSavedTokenPlaylist,
       onUsernameChange = { username = it },
       password = password,
+      rememberPassword = rememberPassword,
       serverUrl = serverUrl,
       statusText = statusText,
       username = username,
@@ -951,14 +996,15 @@ private fun DialogActionButton(
 
 @Composable
 private fun TvBackendLoginScreen(
-  deviceToken: String,
+  autoLoginEnabled: Boolean,
   onConnect: () -> Unit,
+  onAutoLoginChange: (Boolean) -> Unit,
   onPasswordChange: (String) -> Unit,
+  onRememberPasswordChange: (Boolean) -> Unit,
   onServerUrlChange: (String) -> Unit,
-  onSystemInfo: () -> Unit,
-  onUseSavedToken: () -> Unit,
   onUsernameChange: (String) -> Unit,
   password: String,
+  rememberPassword: Boolean,
   serverUrl: String,
   statusText: String,
   username: String,
@@ -968,7 +1014,8 @@ private fun TvBackendLoginScreen(
   val usernameFocus = remember { FocusRequester() }
   val passwordFocus = remember { FocusRequester() }
   val connectFocus = remember { FocusRequester() }
-  val savedFocus = remember { FocusRequester() }
+  val rememberFocus = remember { FocusRequester() }
+  val autoLoginFocus = remember { FocusRequester() }
   var useHttps by remember(serverUrl) { mutableStateOf(serverUrl.trim().startsWith("https://")) }
   var passwordVisible by remember { mutableStateOf(false) }
   var hostPort by remember(serverUrl) {
@@ -1130,7 +1177,7 @@ private fun TvBackendLoginScreen(
           GlassPrimaryButton(
             focusRequester = connectFocus,
             onClick = onConnect,
-            onMoveDown = { if (deviceToken.isNotBlank()) savedFocus.requestFocus() },
+            onMoveDown = { rememberFocus.requestFocus() },
             onMoveUp = { passwordFocus.requestFocus() },
             text = "立即登录",
             upFocusRequester = passwordFocus,
@@ -1142,16 +1189,18 @@ private fun TvBackendLoginScreen(
             Spacer(modifier = Modifier.width(8.dp))
             BasicText(text = statusText.ifBlank { "系统已就绪，等待登录" }, style = TextStyle(color = Color(0xDDE9E8F7), fontSize = 12.sp))
           }
-          if (deviceToken.isNotBlank()) {
-            Spacer(modifier = Modifier.height(10.dp))
-            Row(modifier = Modifier.align(Alignment.CenterHorizontally), horizontalArrangement = Arrangement.spacedBy(18.dp)) {
-              SmallGlassLink(
-                focusRequester = savedFocus,
-                onClick = onUseSavedToken,
-                text = "进入相册",
-              )
-              SmallGlassLink(onClick = onSystemInfo, text = "系统信息")
-            }
+          Spacer(modifier = Modifier.height(10.dp))
+          Row(modifier = Modifier.align(Alignment.CenterHorizontally), horizontalArrangement = Arrangement.spacedBy(18.dp)) {
+            SmallGlassLink(
+              focusRequester = rememberFocus,
+              onClick = { onRememberPasswordChange(!rememberPassword) },
+              text = if (rememberPassword) "✓ 记住密码" else "记住密码",
+            )
+            SmallGlassLink(
+              focusRequester = autoLoginFocus,
+              onClick = { onAutoLoginChange(!autoLoginEnabled) },
+              text = if (autoLoginEnabled) "✓ 自动登录" else "自动登录",
+            )
           }
         }
       }
@@ -2153,10 +2202,23 @@ private fun SmallGlassLink(
   onClick: () -> Unit,
   text: String,
 ) {
+  var focused by remember { mutableStateOf(false) }
   val baseModifier = Modifier
     .height(34.dp)
+    .onFocusChanged { focused = it.isFocused }
+    .onPreviewKeyEvent { event ->
+      if (event.type != KeyEventType.KeyUp) return@onPreviewKeyEvent false
+      when (event.key) {
+        Key.DirectionCenter, Key.Enter -> {
+          onClick()
+          true
+        }
+        else -> false
+      }
+    }
     .clickable { onClick() }
     .background(Color.White.copy(alpha = 0.10f), RoundedCornerShape(17.dp))
+    .border(1.dp, if (focused) Color.White.copy(alpha = 0.75f) else Color.Transparent, RoundedCornerShape(17.dp))
     .padding(horizontal = 18.dp)
   Box(
     modifier = if (focusRequester != null) {
@@ -3242,6 +3304,18 @@ fun preferredServerUrl(
   if (isLoopbackServerUrl(stored) && !isLoopbackServerUrl(buildDefault)) return buildDefault
   return stored
 }
+
+fun shouldAttemptStoredCredentialAutoLogin(
+  serverUrl: String,
+  username: String,
+  password: String,
+  autoLoginEnabled: Boolean,
+): Boolean = autoLoginEnabled &&
+  serverUrl.trim().isNotBlank() &&
+  username.trim().isNotBlank() &&
+  password.trim().isNotBlank()
+
+fun firstPlayableAlbumIndex(albums: List<TvAlbum>): Int = albums.indexOfFirst { it.items.isNotEmpty() }
 
 private fun isLegacyLocalBackendUrl(serverUrl: String): Boolean {
   val uri = try {

@@ -106,19 +106,12 @@ class MemoryExhibitionPlayerTest {
   }
 
   @Test
-  fun portraitPhotosUseEveryExistingLayoutWithoutChangingDuringPlayback() {
+  fun portraitPhotosUseCenterLayoutWithoutChangingDuringPlayback() {
     val variants = (1..100)
       .map { portraitLayoutVariantFor("portrait-photo-$it") }
       .toSet()
 
-    assertEquals(
-      setOf(
-        PortraitLayoutVariant.Center,
-        PortraitLayoutVariant.PhotoRight,
-        PortraitLayoutVariant.PhotoLeft,
-      ),
-      variants,
-    )
+    assertEquals(setOf(PortraitLayoutVariant.Center), variants)
     assertEquals(
       portraitLayoutVariantFor("stable-photo"),
       portraitLayoutVariantFor("stable-photo"),
@@ -126,16 +119,25 @@ class MemoryExhibitionPlayerTest {
   }
 
   @Test
-  fun portraitLayoutsRefreshWhenAPlaybackSessionRestarts() {
+  fun portraitPhotosUseOnlyCenterLayoutToAvoidSidePhotoOverlapOnAndroid9() {
+    val variants = (1..100)
+      .map { portraitLayoutVariantFor("portrait-photo-$it", sessionSeed = it) }
+      .toSet()
+
+    assertEquals(setOf(PortraitLayoutVariant.Center), variants)
+  }
+
+  @Test
+  fun portraitLayoutsStayCenteredWhenAPlaybackSessionRestarts() {
     val photoIds = (1..30).map { "portrait-photo-$it" }
     val firstSession = photoIds.map { portraitLayoutVariantFor(it, sessionSeed = 101) }
     val repeatedFirstSession = photoIds.map { portraitLayoutVariantFor(it, sessionSeed = 101) }
     val secondSession = photoIds.map { portraitLayoutVariantFor(it, sessionSeed = 102) }
 
     assertEquals(firstSession, repeatedFirstSession)
-    assertNotEquals(firstSession, secondSession)
-    assertEquals(PortraitLayoutVariant.entries.toSet(), firstSession.toSet())
-    assertEquals(PortraitLayoutVariant.entries.toSet(), secondSession.toSet())
+    assertEquals(firstSession, secondSession)
+    assertEquals(setOf(PortraitLayoutVariant.Center), firstSession.toSet())
+    assertEquals(setOf(PortraitLayoutVariant.Center), secondSession.toSet())
   }
 
   @Test

@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import {
   buildPlaybackAlbumCoverPath,
   buildPlaybackMemberMetadataForm,
+  buildPlaybackMemberNarrationEditForm,
   formatPlaybackAlbumPhotoCount,
   getAuthorizedDeviceSummary,
   getDeviceAlbumAuthorizationSummary,
@@ -67,6 +68,32 @@ describe('playback album view helpers', () => {
       sourceOwnerName: 'family',
       takenAt: '2023-10-02',
       weather: 'sunny',
+    });
+  });
+
+  it('builds the quick narration edit form with editable display metadata', () => {
+    expect(
+      buildPlaybackMemberNarrationEditForm({
+        aiComment: '慢慢走，比较快',
+        aiDetail: JSON.stringify({
+          raw: {
+            photo_analysis: {
+              observed_meta: {
+                weather: 'cloudy',
+              },
+            },
+          },
+        }),
+        location: 'Hong Kong',
+        photoId: 'scan_002',
+        takenAt: '2023-10-03',
+      }),
+    ).toEqual({
+      aiComment: '慢慢走，比较快',
+      location: 'Hong Kong',
+      photoId: 'scan_002',
+      takenAt: '2023-10-03',
+      weather: 'cloudy',
     });
   });
 

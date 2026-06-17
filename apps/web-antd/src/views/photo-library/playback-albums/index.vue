@@ -58,6 +58,7 @@ import {
   getAuthorizedDeviceSummary,
   getPlaybackAlbumReadiness,
   buildPlaybackMemberMetadataForm,
+  buildPlaybackMemberNarrationEditForm,
   buildPlaybackAlbumCoverPath,
   formatPlaybackAlbumPhotoCount,
   sortPlaybackAlbumsByUpdatedAt,
@@ -89,7 +90,6 @@ const aiDetailSyncing = ref(false);
 const aiNarrationEditVisible = ref(false);
 const aiNarrationEditRecord = ref<PhotoCenterItem>();
 const aiNarrationEditSaving = ref(false);
-const aiNarrationEditText = ref('');
 const photoEditVisible = ref(false);
 const photoEditSaving = ref(false);
 const aiTaskVisible = ref(false);
@@ -142,6 +142,13 @@ const photoEditForm = reactive({
   photoId: '',
   sourceAlbumKind: '' as PhotoCenterSourceAlbumKind,
   sourceOwnerName: '',
+  takenAt: '',
+  weather: '',
+});
+const aiNarrationEditForm = reactive({
+  aiComment: '',
+  location: '',
+  photoId: '',
   takenAt: '',
   weather: '',
 });
@@ -778,7 +785,7 @@ function updateInlineAiComment(record: PhotoCenterItem | Record<string, any>, ev
 function openMemberNarrationEdit(record: PhotoCenterItem | Record<string, any>) {
   const photo = record as PhotoCenterItem;
   aiNarrationEditRecord.value = photo;
-  aiNarrationEditText.value = photo.aiComment || '';
+  Object.assign(aiNarrationEditForm, buildPlaybackMemberNarrationEditForm(photo));
   aiNarrationEditVisible.value = true;
 }
 
@@ -798,11 +805,8 @@ async function submitMemberMetadataEdit() {
     const updated = await updatePhotoMetadataApi(photoEditForm.photoId, {
       captionTitle: photoEditForm.captionTitle,
       importAlbumTitle: photoEditForm.importAlbumTitle,
-      location: photoEditForm.location,
       sourceAlbumKind: photoEditForm.sourceAlbumKind,
       sourceOwnerName: photoEditForm.sourceOwnerName,
-      takenAt: photoEditForm.takenAt,
-      weather: photoEditForm.weather,
     });
     members.value = members.value.map((item) =>
       item.photoId === updated.photoId ? { ...item, ...updated } : item,
@@ -894,7 +898,7 @@ async function selectMemberNarration(
 }
 
 function selectEditNarration(value: string) {
-  aiNarrationEditText.value = value;
+  aiNarrationEditForm.aiComment = value;
 }
 
 async function submitMemberNarrationEdit() {
@@ -903,8 +907,19 @@ async function submitMemberNarrationEdit() {
   aiNarrationEditSaving.value = true;
   try {
     await saveMemberAiInsight(photo, {
-      aiComment: aiNarrationEditText.value.trim(),
+      aiComment: aiNarrationEditForm.aiComment.trim(),
     });
+    const updated = await updatePhotoMetadataApi(photo.photoId, {
+      location: aiNarrationEditForm.location,
+      takenAt: aiNarrationEditForm.takenAt,
+      weather: aiNarrationEditForm.weather,
+    });
+    members.value = members.value.map((item) =>
+      item.photoId === updated.photoId ? { ...item, ...updated } : item,
+    );
+    if (aiDetailRecord.value?.photoId === updated.photoId) {
+      aiDetailRecord.value = { ...aiDetailRecord.value, ...updated };
+    }
     message.success('AI 旁白已修改');
     aiNarrationEditVisible.value = false;
   } finally {
@@ -1752,9 +1767,6 @@ onMounted(loadPlaybackOverview);
       <Space class="assignment-form" direction="vertical" size="middle">
         <Input v-model:value="photoEditForm.captionTitle" placeholder="照片名称" />
         <Input v-model:value="photoEditForm.importAlbumTitle" placeholder="导入相册" />
-        <Input v-model:value="photoEditForm.takenAt" placeholder="展示时间，例如 2023-10-02" />
-        <Input v-model:value="photoEditForm.location" placeholder="展示地点，例如 杭州西湖区" />
-        <Input v-model:value="photoEditForm.weather" placeholder="展示天气，例如 晴朗" />
         <Select
           v-model:value="photoEditForm.sourceAlbumKind"
           :options="sourceAlbumKindOptions"
@@ -1773,8 +1785,20 @@ onMounted(loadPlaybackOverview);
       @ok="submitMemberNarrationEdit"
     >
       <Space v-if="aiNarrationEditRecord" direction="vertical" size="middle" style="width: 100%">
+        <Input
+          v-model:value="aiNarrationEditForm.takenAt"
+          placeholder="展示时间，例如 2023-10-02"
+        />
+        <Input
+          v-model:value="aiNarrationEditForm.location"
+          placeholder="展示地点，例如 杭州西湖区"
+        />
+        <Input
+          v-model:value="aiNarrationEditForm.weather"
+          placeholder="展示天气，例如 晴朗"
+        />
         <TextArea
-          v-model:value="aiNarrationEditText"
+          v-model:value="aiNarrationEditForm.aiComment"
           :auto-size="{ minRows: 4, maxRows: 8 }"
           placeholder="输入当前播放使用的一条旁白"
         />

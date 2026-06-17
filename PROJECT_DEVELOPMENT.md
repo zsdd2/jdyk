@@ -1,5 +1,14 @@
 # 往日重现开发进度同步
 
+## 2026-06-17 2.0.5 播放编辑与 Android TV 登录/竖图修复
+
+- 当前目标：把播放相册里的时间、地点、天气快速修改入口合并到“快速修改 AI 旁白”模态；Android TV 竖构图不再随机使用左右侧栏模板，避免真机 Android 9 上照片与文案重叠；电视端登录不再凭旧 token 免登录进入相册，输入后台地址、账号、密码后直接进入首个可播放相册，底部改为“记住密码/自动登录”。
+- 当前状态：Web 播放相册已新增旁白编辑 metadata 表单 helper；独立“编辑照片信息”不再显示或提交时间/地点/天气；Android TV 已新增凭保存账号密码自动登录策略、首个可播相册选择 helper，并把竖图播放模板固定为居中。项目/后端/管理端版本已更新为 `2.0.5`；Android TV 已更新为 `versionCode 17 / versionName 2.0.5`；GHCR workflow、生产 env、Compose、TV README、manifest 测试和本地发布脚本已同步。
+- 最新已验证步骤：已先让 `..\..\node_modules\.bin\vitest.CMD run src/views/photo-library/playback-albums/playback-album-view.spec.ts` 因缺少 `buildPlaybackMemberNarrationEditForm` 失败；已先让 Android TV 新增登录/竖图回归测试因缺少 helper 或仍随机左右模板失败。实现后，Web 播放相册测试 11 项通过；`.\gradlew.bat :app:testDebugUnitTest --tests com.wangrizhongxian.tv.MemoryExhibitionPlayerTest --tests com.wangrizhongxian.tv.AlbumParsingTest --no-daemon` 通过；`corepack pnpm -F @vben/web-antd run typecheck`、`node --test scripts/android-tv/generate-update-manifest.test.mjs`、后端 `node_modules\.bin\jest.CMD app-access.guard.spec.ts app.controller.spec.ts sqlite-photo.repository.spec.ts --runInBand` 均通过。完整 `.\scripts\release\verify-local-release.ps1` 已通过，覆盖 manifest、后端聚焦测试、Web 聚焦测试、后端 build、Web typecheck/build、Compose 展开、Android debug/release 构建、APK 元数据和本地 APK 留档。
+- 本地构建证据：`releases/wangri-tv-2.0.5-debug.apk` 大小 `17483623` 字节，SHA256 `5B538523391544EBC439C285D70238F8F66E0BFD30996CBCCF99AB6A89AE32CF`；`releases/wangri-tv-2.0.5-unsigned.apk` 大小 `14228228` 字节，SHA256 `9D827028E66DADB50276B31D9D5DEB2E41DA74AE095142AEABAF9D864FFE77C4`，未签名包只作本机构建验证。
+- 下一步计划：提交、推送 `main`、`v2.0.5`、`tv-v2.0.5`，再等待 GHCR 和 Android TV Release 工作流。
+- 当前风险：真实 Android 9 设备尚未现场复测；生产飞牛上线前仍需备份 `/vol1/1000/docker/jdyk/data` 并确认登录直达播放、自动登录和 TV 更新。
+
 ## 2026-06-17 2.0.4 登录 500、TV 第三行与播放列表编辑修复
 
 - 当前目标：修复升级到 `2.0.3` 后生产库首次用 `admin / admin123` 登录返回 500；同时修复 Android TV 侧栏竖图第三行字幕显示不全，并让播放相册成员列表也能直接编辑照片展示时间、地点、天气等信息。

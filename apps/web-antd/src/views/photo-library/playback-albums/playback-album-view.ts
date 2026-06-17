@@ -73,6 +73,22 @@ export interface PlaybackMemberMetadataForm {
   weather: string;
 }
 
+export interface PlaybackMemberNarrationEditItem {
+  aiComment: string;
+  aiDetail: string;
+  location: string;
+  photoId: string;
+  takenAt: string;
+}
+
+export interface PlaybackMemberNarrationEditForm {
+  aiComment: string;
+  location: string;
+  photoId: string;
+  takenAt: string;
+  weather: string;
+}
+
 export function buildPlaybackAlbumCoverPath(album: {
   coverImageUrl?: string;
   coverPhotoId?: string;
@@ -112,6 +128,18 @@ export function buildPlaybackMemberMetadataForm(
     photoId: photo.photoId,
     sourceAlbumKind: photo.sourceAlbumKind,
     sourceOwnerName: photo.sourceOwnerName,
+    takenAt: photo.takenAt,
+    weather: extractPhotoObservedWeather(photo),
+  };
+}
+
+export function buildPlaybackMemberNarrationEditForm(
+  photo: PlaybackMemberNarrationEditItem,
+): PlaybackMemberNarrationEditForm {
+  return {
+    aiComment: photo.aiComment || '',
+    location: photo.location,
+    photoId: photo.photoId,
     takenAt: photo.takenAt,
     weather: extractPhotoObservedWeather(photo),
   };

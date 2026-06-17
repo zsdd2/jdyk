@@ -736,7 +736,7 @@ export class AppService implements OnModuleDestroy, OnModuleInit {
       name: 'wangri-zhongxian-backend',
       status: 'ok',
       timestamp: new Date().toISOString(),
-      version: '2.0.4',
+      version: '2.0.5',
     };
   }
 

@@ -31,8 +31,8 @@ android {
     applicationId 'com.wangrizhongxian.tv'
     minSdk 23
     targetSdk 35
-    versionCode 16
-    versionName '2.0.4'
+    versionCode 17
+    versionName '2.0.5'
     buildConfigField 'String', 'WRJDYK_TV_DEFAULT_SERVER_URL', "\"${escapedTvDefaultServerUrl}\""
   }
 
