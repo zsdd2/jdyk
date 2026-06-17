@@ -332,6 +332,30 @@ describe('SqlitePhotoRepository', () => {
     expect(settings.outputContractPrompt).toContain('photo_analysis.observed_meta');
   });
 
+  it('repairs a missing admin credential table when migration metadata already reached version 19', () => {
+    repository = new SqlitePhotoRepository({
+      databasePath,
+      photoRoot,
+    });
+    repository.initialize();
+    repository.close();
+    repository = undefined;
+
+    const database = new DatabaseSync(databasePath);
+    try {
+      database.exec('DROP TABLE admin_credentials');
+    } finally {
+      database.close();
+    }
+
+    repository = new SqlitePhotoRepository({
+      databasePath,
+      photoRoot,
+    });
+
+    expect(repository.getAdminCredential()).toBeNull();
+  });
+
   it('persists AI recognition task progress across repository instances', () => {
     repository = new SqlitePhotoRepository({
       databasePath,

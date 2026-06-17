@@ -49,6 +49,30 @@ export interface DeviceAlbumAuthorizationSummary {
   label: string;
 }
 
+export interface PlaybackMemberMetadataItem {
+  aiDetail: string;
+  albumName: string;
+  captionTitle: string;
+  filename: string;
+  importAlbumTitle: string;
+  location: string;
+  photoId: string;
+  sourceAlbumKind: '' | 'owned' | 'shared_by_me' | 'shared_to_me';
+  sourceOwnerName: string;
+  takenAt: string;
+}
+
+export interface PlaybackMemberMetadataForm {
+  captionTitle: string;
+  importAlbumTitle: string;
+  location: string;
+  photoId: string;
+  sourceAlbumKind: '' | 'owned' | 'shared_by_me' | 'shared_to_me';
+  sourceOwnerName: string;
+  takenAt: string;
+  weather: string;
+}
+
 export function buildPlaybackAlbumCoverPath(album: {
   coverImageUrl?: string;
   coverPhotoId?: string;
@@ -64,6 +88,33 @@ export function buildPlaybackAlbumCoverPath(album: {
 
 export function formatPlaybackAlbumPhotoCount(photoCount: number) {
   return `${photoCount} 张`;
+}
+
+export function extractPhotoObservedWeather(record: Pick<PlaybackMemberMetadataItem, 'aiDetail'>) {
+  if (!record.aiDetail.trim()) return '';
+  try {
+    const parsed = JSON.parse(record.aiDetail) as Record<string, any>;
+    const raw = parsed.raw && typeof parsed.raw === 'object' ? parsed.raw : parsed;
+    const weather = raw?.photo_analysis?.observed_meta?.weather;
+    return typeof weather === 'string' ? weather : '';
+  } catch {
+    return '';
+  }
+}
+
+export function buildPlaybackMemberMetadataForm(
+  photo: PlaybackMemberMetadataItem,
+): PlaybackMemberMetadataForm {
+  return {
+    captionTitle: photo.captionTitle || photo.filename,
+    importAlbumTitle: photo.importAlbumTitle || photo.albumName,
+    location: photo.location,
+    photoId: photo.photoId,
+    sourceAlbumKind: photo.sourceAlbumKind,
+    sourceOwnerName: photo.sourceOwnerName,
+    takenAt: photo.takenAt,
+    weather: extractPhotoObservedWeather(photo),
+  };
 }
 
 function enabledDeviceCanAccessAlbum(

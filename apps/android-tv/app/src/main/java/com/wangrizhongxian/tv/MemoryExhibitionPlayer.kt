@@ -857,10 +857,10 @@ internal fun portraitPhotoRightCaptionDesignLines(): List<CinematicCaptionLineSp
       left = 221,
       top = 1850,
       width = 1900,
-      height = 108,
-      fontSize = 95,
-      lineHeight = 108,
-      letterSpacing = 36,
+      height = 100,
+      fontSize = 82,
+      lineHeight = 100,
+      letterSpacing = 26,
     ),
   )
 }
@@ -889,10 +889,10 @@ internal fun portraitPhotoLeftCaptionDesignLines(): List<CinematicCaptionLineSpe
       left = 1719,
       top = 1750,
       width = 1900,
-      height = 108,
-      fontSize = 95,
-      lineHeight = 108,
-      letterSpacing = 36,
+      height = 100,
+      fontSize = 82,
+      lineHeight = 100,
+      letterSpacing = 26,
     ),
   )
 }

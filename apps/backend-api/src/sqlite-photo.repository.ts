@@ -3234,6 +3234,7 @@ export class SqlitePhotoRepository {
         applied_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
       );
     `);
+    this.ensureRepairableSchemaObjects();
 
     const row = database
       .prepare('SELECT COALESCE(MAX(version), 0) AS version FROM schema_migrations')
@@ -3683,6 +3684,19 @@ export class SqlitePhotoRepository {
       database.exec('ROLLBACK');
       throw error;
     }
+  }
+
+  private ensureRepairableSchemaObjects(): void {
+    this.getDatabase().exec(`
+      CREATE TABLE IF NOT EXISTS admin_credentials (
+        id INTEGER PRIMARY KEY CHECK (id = 1),
+        username TEXT NOT NULL DEFAULT 'admin',
+        password_hash TEXT NOT NULL,
+        password_salt TEXT NOT NULL,
+        password_updated_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+    `);
   }
 
   private cleanupMissingSeedPhotos(): number {

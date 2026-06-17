@@ -70,6 +70,28 @@ class MemoryExhibitionPlayerTest {
   }
 
   @Test
+  fun portraitSideClosureLineLeavesRoomForTenChineseCharacters() {
+    val closure = "把这份从容留在记忆"
+
+    listOf(
+      portraitPhotoRightCaptionDesignLines()[2],
+      portraitPhotoLeftCaptionDesignLines()[2],
+    ).forEach { spec ->
+      val fit = cinematicCaptionFit(listOf(closure), spec, CaptionRole.Soft)
+      val fittedWidth = cinematicCaptionEstimatedTextWidth(
+        closure,
+        fit.fontSize,
+        fit.letterSpacing,
+        CaptionRole.Soft,
+      )
+
+      assertTrue(fit.fontSize <= 84)
+      assertTrue(fit.letterSpacing <= 30)
+      assertTrue(fittedWidth <= spec.width * 0.72f)
+    }
+  }
+
+  @Test
   fun portraitPhotoLeftLayoutMatchesApproved4kDesign() {
     val frame = portraitPhotoLeftFrame()
     val lines = portraitPhotoLeftCaptionDesignLines()

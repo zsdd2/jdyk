@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   buildPlaybackAlbumCoverPath,
+  buildPlaybackMemberMetadataForm,
   formatPlaybackAlbumPhotoCount,
   getAuthorizedDeviceSummary,
   getDeviceAlbumAuthorizationSummary,
@@ -33,6 +34,40 @@ describe('playback album view helpers', () => {
 
   it('formats the photo count for table display', () => {
     expect(formatPlaybackAlbumPhotoCount(8)).toBe('8 张');
+  });
+
+  it('builds the playback member metadata edit form with observed weather', () => {
+    expect(
+      buildPlaybackMemberMetadataForm({
+        aiDetail: JSON.stringify({
+          raw: {
+            photo_analysis: {
+              observed_meta: {
+                weather: 'sunny',
+              },
+            },
+          },
+        }),
+        albumName: 'fallback album',
+        captionTitle: '',
+        filename: '_DSC9448',
+        importAlbumTitle: '',
+        location: 'Hong Kong',
+        photoId: 'scan_001',
+        sourceAlbumKind: 'shared_to_me',
+        sourceOwnerName: 'family',
+        takenAt: '2023-10-02',
+      }),
+    ).toEqual({
+      captionTitle: '_DSC9448',
+      importAlbumTitle: 'fallback album',
+      location: 'Hong Kong',
+      photoId: 'scan_001',
+      sourceAlbumKind: 'shared_to_me',
+      sourceOwnerName: 'family',
+      takenAt: '2023-10-02',
+      weather: 'sunny',
+    });
   });
 
   it('sorts playback albums by latest update first', () => {

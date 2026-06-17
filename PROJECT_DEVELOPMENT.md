@@ -1,5 +1,15 @@
 # 往日重现开发进度同步
 
+## 2026-06-17 2.0.4 登录 500、TV 第三行与播放列表编辑修复
+
+- 当前目标：修复升级到 `2.0.3` 后生产库首次用 `admin / admin123` 登录返回 500；同时修复 Android TV 侧栏竖图第三行字幕显示不全，并让播放相册成员列表也能直接编辑照片展示时间、地点、天气等信息。
+- 当前状态：已定位登录 500 的根因为迁移记录已到 schema 19 但 `admin_credentials` 表缺失时，登录读取管理员凭据表会抛出 `no such table: admin_credentials`；已在 SQLite 初始化阶段增加可自愈建表。Android TV 左右侧栏第三行已缩小字号和字距，给 10 个中文字符留出更大安全余量。播放相册成员操作菜单已新增“编辑信息”，复用照片中心 `/metadata` 接口，保存后同步当前成员行和 AI 详情记录。
+- 版本收口：项目/后端/管理端版本已更新为 `2.0.4`；Android TV 已更新为 `versionCode 16 / versionName 2.0.4`；GHCR workflow、生产 env、Compose、TV README、manifest 测试和本地发布脚本已同步。
+- 最新已验证步骤：已先让 `node_modules\.bin\jest.CMD sqlite-photo.repository.spec.ts --runInBand --testNamePattern="repairs a missing admin credential table"` 失败并确认错误为 `no such table: admin_credentials`，实现后该测试通过；已先让 `.\gradlew.bat :app:testDebugUnitTest --tests com.wangrizhongxian.tv.MemoryExhibitionPlayerTest.portraitSideClosureLineLeavesRoomForTenChineseCharacters --no-daemon` 失败，实现后通过。随后 `node_modules\.bin\jest.CMD app-access.guard.spec.ts app.controller.spec.ts sqlite-photo.repository.spec.ts --runInBand` 通过 3 个套件 118 项；`..\..\node_modules\.bin\vitest.CMD run src/views/photo-library/playback-albums/playback-album-view.spec.ts` 通过 10 项；`corepack pnpm -F @vben/web-antd run typecheck`、`node --test scripts/android-tv/generate-update-manifest.test.mjs`、`.\gradlew.bat :app:testDebugUnitTest --tests com.wangrizhongxian.tv.MemoryExhibitionPlayerTest --no-daemon` 均通过。完整 `.\scripts\release\verify-local-release.ps1` 已通过，覆盖后端聚焦测试、后端 build、Web typecheck/build、Compose 展开、Android 构建、APK 元数据和本地 APK 留档。
+- 本地构建证据：`releases/wangri-tv-2.0.4-debug.apk` 大小 `17483630` 字节，SHA256 `F0E6866B5AB6C889A71144EBCE44ABC1D505E7031EEE4A9F11583FF52386A6AE`；`releases/wangri-tv-2.0.4-unsigned.apk` 大小 `14228232` 字节，SHA256 `9B3B0AB6A8EF8A9DE7AA9BC0E114FDDC236C5FCC7C26E979930E81C43A9ED83E`，未签名包只作本机构建验证。
+- 下一步计划：提交并推送 `main`，创建并推送 `v2.0.4`、`tv-v2.0.4`，等待 GHCR 和 Android TV Release 工作流完成后补充远端证据。
+- 当前风险：尚未在真实飞牛容器上重新覆盖验证，生产上线仍需先备份 `/vol1/1000/docker/jdyk/data` 并确认新版健康接口、首次登录改密、播放列表编辑和 TV 更新；正式 TV 安装包以 GitHub Actions 签名 APK 为准。
+
 ## 2026-06-17 2.0.3 初始密码强制修改与本地 APK 留档
 
 - 当前目标：把正式版首次运行策略改为可用 `admin / admin123` 登录，但登录后必须立即修改初始密码；同时把每次本地 APK 打包后的版本化副本保留到 `releases/`，并统一发布面到 `2.0.3`。

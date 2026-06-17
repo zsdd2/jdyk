@@ -13,15 +13,15 @@ test('parses Android version metadata', () => {
   });
 });
 
-test('Android TV release metadata is version 2.0.3', async () => {
+test('Android TV release metadata is version 2.0.4', async () => {
   const buildGradle = await readFile(
     resolve('apps/android-tv/app/build.gradle'),
     'utf8',
   );
 
   assert.deepEqual(parseAndroidVersion(buildGradle), {
-    versionCode: 15,
-    versionName: '2.0.3',
+    versionCode: 16,
+    versionName: '2.0.4',
   });
 });
 
@@ -31,11 +31,11 @@ test('writes an update manifest with APK integrity metadata', async () => {
   const buildGradlePath = join(directory, 'build.gradle');
   const outputPath = join(directory, 'latest.json');
   await writeFile(apkPath, 'signed-apk-content');
-  await writeFile(buildGradlePath, "versionCode 10\nversionName '2.0.3'\n");
+  await writeFile(buildGradlePath, "versionCode 10\nversionName '2.0.4'\n");
 
   const manifest = await createUpdateManifest({
     apkPath,
-    apkUrl: 'https://example.test/wangri-tv-2.0.3.apk',
+    apkUrl: 'https://example.test/wangri-tv-2.0.4.apk',
     buildGradlePath,
     forceUpdate: true,
     outputPath,
@@ -44,7 +44,7 @@ test('writes an update manifest with APK integrity metadata', async () => {
   });
 
   assert.equal(manifest.versionCode, 10);
-  assert.equal(manifest.versionName, '2.0.3');
+  assert.equal(manifest.versionName, '2.0.4');
   assert.equal(manifest.forceUpdate, true);
   assert.equal(manifest.sizeBytes, 18);
   assert.match(manifest.sha256, /^[a-f0-9]{64}$/);

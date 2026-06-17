@@ -3,6 +3,7 @@ import type {
   PhotoCenterAiStatus,
   FeiniuAlbumOption,
   PhotoCenterItem,
+  PhotoCenterSourceAlbumKind,
   PhotoCenterSourceType,
   PlaybackAlbum,
   TvDevice,
@@ -48,6 +49,7 @@ import {
   removePlaybackAlbumPhotoApi,
   syncPhotoAiDetailApi,
   updatePhotoAiInsightApi,
+  updatePhotoMetadataApi,
   updatePlaybackAlbumApi,
   updatePlaybackAlbumAiPolicyApi,
 } from '#/api/photo-library';
@@ -55,6 +57,7 @@ import {
 import {
   getAuthorizedDeviceSummary,
   getPlaybackAlbumReadiness,
+  buildPlaybackMemberMetadataForm,
   buildPlaybackAlbumCoverPath,
   formatPlaybackAlbumPhotoCount,
   sortPlaybackAlbumsByUpdatedAt,
@@ -87,6 +90,8 @@ const aiNarrationEditVisible = ref(false);
 const aiNarrationEditRecord = ref<PhotoCenterItem>();
 const aiNarrationEditSaving = ref(false);
 const aiNarrationEditText = ref('');
+const photoEditVisible = ref(false);
+const photoEditSaving = ref(false);
 const aiTaskVisible = ref(false);
 const insightSavingPhotoId = ref('');
 const TextArea = Input.TextArea;
@@ -129,6 +134,16 @@ const editForm = reactive({
   sourceAlbumTitle: '',
   sourceType: 'manual' as PlaybackAlbum['sourceType'],
   title: '',
+});
+const photoEditForm = reactive({
+  captionTitle: '',
+  importAlbumTitle: '',
+  location: '',
+  photoId: '',
+  sourceAlbumKind: '' as PhotoCenterSourceAlbumKind,
+  sourceOwnerName: '',
+  takenAt: '',
+  weather: '',
 });
 const sortSourceType = ref<'' | PhotoCenterSourceType>('');
 const sortTargetAlbumId = ref('');
@@ -193,6 +208,12 @@ const sortSelectedCount = computed(() =>
     ? sortSelectedSourceAlbumIds.value.length
     : sortSelectedPhotoIds.value.length,
 );
+const sourceAlbumKindOptions = [
+  { label: '本地导入', value: '' },
+  { label: '共享给我', value: 'shared_to_me' },
+  { label: '我的共享', value: 'shared_by_me' },
+  { label: '专属相册', value: 'owned' },
+];
 
 const albumColumns = [
   { dataIndex: 'coverPhotoId', key: 'coverPhotoId', title: '封面', width: 96 },
@@ -759,6 +780,42 @@ function openMemberNarrationEdit(record: PhotoCenterItem | Record<string, any>) 
   aiNarrationEditRecord.value = photo;
   aiNarrationEditText.value = photo.aiComment || '';
   aiNarrationEditVisible.value = true;
+}
+
+function fillMemberMetadataEditForm(photo: PhotoCenterItem) {
+  Object.assign(photoEditForm, buildPlaybackMemberMetadataForm(photo));
+}
+
+function openMemberMetadataEdit(record: PhotoCenterItem | Record<string, any>) {
+  fillMemberMetadataEditForm(record as PhotoCenterItem);
+  photoEditVisible.value = true;
+}
+
+async function submitMemberMetadataEdit() {
+  if (!photoEditForm.photoId) return;
+  photoEditSaving.value = true;
+  try {
+    const updated = await updatePhotoMetadataApi(photoEditForm.photoId, {
+      captionTitle: photoEditForm.captionTitle,
+      importAlbumTitle: photoEditForm.importAlbumTitle,
+      location: photoEditForm.location,
+      sourceAlbumKind: photoEditForm.sourceAlbumKind,
+      sourceOwnerName: photoEditForm.sourceOwnerName,
+      takenAt: photoEditForm.takenAt,
+      weather: photoEditForm.weather,
+    });
+    members.value = members.value.map((item) =>
+      item.photoId === updated.photoId ? { ...item, ...updated } : item,
+    );
+    if (aiDetailRecord.value?.photoId === updated.photoId) {
+      aiDetailRecord.value = { ...aiDetailRecord.value, ...updated };
+      fillMemberMetadataEditForm(aiDetailRecord.value);
+    }
+    message.success('照片信息已更新');
+    photoEditVisible.value = false;
+  } finally {
+    photoEditSaving.value = false;
+  }
 }
 
 async function openAiDetail(record: PhotoCenterItem | Record<string, any>) {
@@ -1659,6 +1716,9 @@ onMounted(loadPlaybackOverview);
               </Button>
               <template #overlay>
                 <Menu>
+                  <Menu.Item key="edit-metadata" @click="openMemberMetadataEdit(record)">
+                    编辑信息
+                  </Menu.Item>
                   <Menu.Item key="refresh-ai" @click="refreshMemberAi(record)">
                     重新识别
                   </Menu.Item>
@@ -1679,6 +1739,29 @@ onMounted(loadPlaybackOverview);
           </template>
         </template>
       </Table>
+    </Modal>
+
+    <Modal
+      v-model:open="photoEditVisible"
+      :confirm-loading="photoEditSaving"
+      ok-text="保存"
+      title="编辑照片信息"
+      width="520px"
+      @ok="submitMemberMetadataEdit"
+    >
+      <Space class="assignment-form" direction="vertical" size="middle">
+        <Input v-model:value="photoEditForm.captionTitle" placeholder="照片名称" />
+        <Input v-model:value="photoEditForm.importAlbumTitle" placeholder="导入相册" />
+        <Input v-model:value="photoEditForm.takenAt" placeholder="展示时间，例如 2023-10-02" />
+        <Input v-model:value="photoEditForm.location" placeholder="展示地点，例如 杭州西湖区" />
+        <Input v-model:value="photoEditForm.weather" placeholder="展示天气，例如 晴朗" />
+        <Select
+          v-model:value="photoEditForm.sourceAlbumKind"
+          :options="sourceAlbumKindOptions"
+          placeholder="来源类型"
+        />
+        <Input v-model:value="photoEditForm.sourceOwnerName" placeholder="来源账号/所有者" />
+      </Space>
     </Modal>
 
     <Modal
