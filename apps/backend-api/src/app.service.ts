@@ -232,6 +232,14 @@ export interface TvReleaseUploadInput {
   versionName?: string;
 }
 
+export interface TvReleaseSyncInput {
+  forceUpdate?: boolean | string;
+  releaseNotes?: string;
+  versionName?: string;
+}
+
+type TvReleaseAssetFetcher = (url: string) => Promise<Buffer>;
+
 export interface AdminAuthResult {
   accessToken: string;
   mustChangePassword: boolean;
@@ -366,6 +374,7 @@ export class AppService implements OnModuleDestroy, OnModuleInit {
   private aiSchedulerRunning = false;
   private aiSchedulerTimer?: ReturnType<typeof setTimeout>;
   private readonly aiRetryAttempts = new Map<string, number>();
+  private tvReleaseAssetFetcher: TvReleaseAssetFetcher = fetchTvReleaseAsset;
   private readonly aiRetryForceOverwrite = new Map<string, boolean>();
   private readonly aiRetryTimers = new Map<string, ReturnType<typeof setTimeout>>();
   private readonly aiTaskByPhotoId = new Map<string, string>();
@@ -379,6 +388,7 @@ export class AppService implements OnModuleDestroy, OnModuleInit {
 
   onModuleInit(): void {
     this.recoverInterruptedAiRecognitionTasks();
+    this.syncConfiguredTvReleaseOnStartup();
   }
 
   onModuleDestroy(): void {
@@ -824,6 +834,75 @@ export class AppService implements OnModuleDestroy, OnModuleInit {
     return this.getTvReleaseInfo();
   }
 
+  async syncTvReleasePackage(input: TvReleaseSyncInput = {}): Promise<TvReleaseInfo> {
+    const versionName = this.resolveTvReleaseSyncVersionName(input.versionName);
+    if (!versionName) {
+      throw new Error('TV release versionName is required');
+    }
+
+    const downloadBaseUrl = this.resolveTvReleaseDownloadBaseUrl(versionName);
+    const remoteManifest = readTvReleaseManifestFromBuffer(
+      await this.tvReleaseAssetFetcher(`${downloadBaseUrl}/latest.json`),
+    );
+    if (!remoteManifest) {
+      throw new Error('TV release manifest is invalid');
+    }
+    if (remoteManifest.versionName !== versionName) {
+      throw new Error(
+        `TV release manifest versionName ${remoteManifest.versionName} does not match requested ${versionName}`,
+      );
+    }
+
+    const fileName = `wangri-tv-${versionName}.apk`;
+    const apkDownloadUrl = normalizeHttpUrl(remoteManifest.apkUrl) || `${downloadBaseUrl}/${fileName}`;
+    const apkBuffer = await this.tvReleaseAssetFetcher(apkDownloadUrl);
+    if (!apkBuffer.length) {
+      throw new Error('TV release APK file is empty');
+    }
+
+    const sha256 = createHash('sha256').update(apkBuffer).digest('hex');
+    if (isSha256(remoteManifest.sha256) && remoteManifest.sha256 !== sha256) {
+      throw new Error('TV release APK sha256 does not match manifest');
+    }
+
+    const releasesDirectory = this.getTvReleaseDirectory();
+    mkdirSync(releasesDirectory, { recursive: true });
+    const releasePath = resolve(releasesDirectory, fileName);
+    if (!releasePath.startsWith(`${releasesDirectory}${pathSeparator()}`)) {
+      throw new Error('Invalid TV release path');
+    }
+
+    const releaseNotesOverride = normalizeOptionalText(input.releaseNotes);
+    const manifest: TvAppUpdateManifest = {
+      apkUrl: `/releases/${fileName}`,
+      forceUpdate: input.forceUpdate === undefined
+        ? remoteManifest.forceUpdate
+        : normalizeBooleanValue(input.forceUpdate),
+      publishedAt: remoteManifest.publishedAt || new Date().toISOString(),
+      releaseNotes: releaseNotesOverride || remoteManifest.releaseNotes,
+      sha256,
+      sizeBytes: apkBuffer.length,
+      versionCode: remoteManifest.versionCode,
+      versionName,
+    };
+
+    writeFileSync(releasePath, apkBuffer);
+    writeFileSync(
+      getTvReleaseMetadataPath(releasesDirectory, fileName),
+      `${JSON.stringify(manifest, null, 2)}\n`,
+    );
+    writeFileSync(
+      this.getTvReleaseManifestPath(),
+      `${JSON.stringify(manifest, null, 2)}\n`,
+    );
+
+    return this.getTvReleaseInfo();
+  }
+
+  replaceTvReleaseAssetFetcherForTesting(fetcher?: TvReleaseAssetFetcher): void {
+    this.tvReleaseAssetFetcher = fetcher ?? fetchTvReleaseAsset;
+  }
+
   private getTvReleaseDirectory(): string {
     return resolve(
       process.env.WRJDYK_RELEASES_DIR?.trim() || join(process.cwd(), 'releases'),
@@ -832,6 +911,33 @@ export class AppService implements OnModuleDestroy, OnModuleInit {
 
   private getTvReleaseManifestPath(): string {
     return join(this.getTvReleaseDirectory(), 'latest.json');
+  }
+
+  private resolveTvReleaseSyncVersionName(versionName?: string): string {
+    return normalizeTvVersionName(versionName)
+      || normalizeTvVersionName(process.env.WRJDYK_TV_RELEASE_SYNC_VERSION_NAME)
+      || normalizeTvVersionName(process.env.WRJDYK_TV_UPDATE_VERSION_NAME)
+      || this.getHealth().version;
+  }
+
+  private resolveTvReleaseDownloadBaseUrl(versionName: string): string {
+    const configuredBase = normalizeOptionalEnv(process.env.WRJDYK_TV_RELEASE_DOWNLOAD_BASE_URL);
+    if (configuredBase) {
+      return configuredBase.replace(/\/+$/, '');
+    }
+    const repository = normalizeOptionalEnv(process.env.WRJDYK_TV_RELEASE_REPOSITORY) || 'zsdd2/jdyk';
+    return `https://github.com/${repository}/releases/download/tv-v${versionName}`;
+  }
+
+  private syncConfiguredTvReleaseOnStartup(): void {
+    if (normalizeOptionalEnv(process.env.WRJDYK_TV_RELEASE_SYNC).toLowerCase() !== 'auto') {
+      return;
+    }
+    void this.syncTvReleasePackage().catch((error) => {
+      console.warn('TV release auto-sync failed', {
+        error: error instanceof Error ? error.message : String(error),
+      });
+    });
   }
 
   getAlbums(
@@ -4038,7 +4144,15 @@ function compareTvReleaseVersions(left: TvReleaseVersion, right: TvReleaseVersio
 function readTvReleaseManifest(manifestPath: string): TvAppUpdateManifest | null {
   if (!existsSync(manifestPath)) return null;
   try {
-    const parsed = JSON.parse(readFileSync(manifestPath, 'utf8')) as unknown;
+    return readTvReleaseManifestFromBuffer(Buffer.from(readFileSync(manifestPath, 'utf8')));
+  } catch {
+    return null;
+  }
+}
+
+function readTvReleaseManifestFromBuffer(buffer: Buffer): TvAppUpdateManifest | null {
+  try {
+    const parsed = JSON.parse(buffer.toString('utf8')) as unknown;
     const record = parsed && typeof parsed === 'object'
       ? parsed as Record<string, unknown>
       : {};
@@ -4091,6 +4205,19 @@ function normalizeTvReleaseFileNameFromUrl(value: string): string {
   return /^[A-Za-z0-9._-]+\.apk$/.test(lastSegment) ? lastSegment : '';
 }
 
+function normalizeHttpUrl(value: string): string {
+  try {
+    const parsed = new URL(value);
+    return parsed.protocol === 'https:' || parsed.protocol === 'http:' ? parsed.toString() : '';
+  } catch {
+    return '';
+  }
+}
+
+function isSha256(value: string): boolean {
+  return /^[a-f0-9]{64}$/i.test(value);
+}
+
 function isTvReleaseApkFileName(value: string): boolean {
   return /^[A-Za-z0-9._-]+\.apk$/i.test(value);
 }
@@ -4108,6 +4235,14 @@ function getTvReleaseMetadataPath(releasesDirectory: string, fileName: string): 
 
 function pathSeparator(): '\\' | '/' {
   return process.platform === 'win32' ? '\\' : '/';
+}
+
+async function fetchTvReleaseAsset(url: string): Promise<Buffer> {
+  const response = await fetch(url);
+  if (!response.ok) {
+    throw new Error(`Unable to download TV release asset ${url}: HTTP ${response.status}`);
+  }
+  return Buffer.from(await response.arrayBuffer());
 }
 
 function normalizePhotoCenterStatus(

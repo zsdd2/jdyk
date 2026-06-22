@@ -12,6 +12,7 @@ import {
 } from 'fs';
 import { join } from 'path';
 import { DatabaseSync } from 'node:sqlite';
+import { createHash } from 'node:crypto';
 import { AppController } from './app.controller';
 import {
   AppService,
@@ -332,6 +333,91 @@ describe('AppController', () => {
           }),
         ]);
       } finally {
+        restoreEnv('WRJDYK_RELEASES_DIR', previousReleaseDir);
+        rmSync(releaseDir, { force: true, recursive: true });
+      }
+    });
+
+    it('syncs the matching GitHub TV release assets into the local release directory', async () => {
+      const previousReleaseDir = process.env.WRJDYK_RELEASES_DIR;
+      const releaseDir = join(testDataDir, 'synced-releases');
+      const apkBuffer = Buffer.from('signed-apk-v206');
+      mkdirSync(releaseDir, { recursive: true });
+      process.env.WRJDYK_RELEASES_DIR = releaseDir;
+      appService.replaceTvReleaseAssetFetcherForTesting(async (url) => {
+        if (url.endsWith('/latest.json')) {
+          return Buffer.from(JSON.stringify({
+            apkUrl: 'https://github.com/zsdd2/jdyk/releases/download/tv-v2.0.6/wangri-tv-2.0.6.apk',
+            forceUpdate: false,
+            publishedAt: '2026-06-18T12:00:00Z',
+            releaseNotes: 'Android TV 2.0.6 login focus fix',
+            sha256: 'ignored-remote-hash',
+            sizeBytes: 1,
+            versionCode: 18,
+            versionName: '2.0.6',
+          }));
+        }
+        if (url.endsWith('/wangri-tv-2.0.6.apk')) {
+          return apkBuffer;
+        }
+        throw new Error(`unexpected URL ${url}`);
+      });
+
+      try {
+        const synced = await appController.syncAdminTvRelease({
+          versionName: '2.0.6',
+        });
+
+        expect(synced.data).toEqual(expect.objectContaining({
+          fileExists: true,
+          fileName: 'wangri-tv-2.0.6.apk',
+          manifest: expect.objectContaining({
+            apkUrl: '/releases/wangri-tv-2.0.6.apk',
+            releaseNotes: 'Android TV 2.0.6 login focus fix',
+            sha256: createHash('sha256').update(apkBuffer).digest('hex'),
+            sizeBytes: apkBuffer.length,
+            versionCode: 18,
+            versionName: '2.0.6',
+          }),
+        }));
+        expect(existsSync(join(releaseDir, 'wangri-tv-2.0.6.apk'))).toBe(true);
+        expect(
+          JSON.parse(readFileSync(join(releaseDir, 'latest.json'), 'utf8')),
+        ).toMatchObject({
+          apkUrl: '/releases/wangri-tv-2.0.6.apk',
+          versionCode: 18,
+          versionName: '2.0.6',
+        });
+      } finally {
+        appService.replaceTvReleaseAssetFetcherForTesting(undefined);
+        restoreEnv('WRJDYK_RELEASES_DIR', previousReleaseDir);
+        rmSync(releaseDir, { force: true, recursive: true });
+      }
+    });
+
+    it('rejects synced TV release assets when the manifest version does not match the requested version', async () => {
+      const previousReleaseDir = process.env.WRJDYK_RELEASES_DIR;
+      const releaseDir = join(testDataDir, 'sync-version-mismatch');
+      mkdirSync(releaseDir, { recursive: true });
+      process.env.WRJDYK_RELEASES_DIR = releaseDir;
+      appService.replaceTvReleaseAssetFetcherForTesting(async () => Buffer.from(JSON.stringify({
+        apkUrl: 'https://github.com/zsdd2/jdyk/releases/download/tv-v2.0.5/wangri-tv-2.0.5.apk',
+        forceUpdate: false,
+        publishedAt: '2026-06-17T12:00:00Z',
+        releaseNotes: 'Android TV 2.0.5',
+        sha256: '',
+        sizeBytes: 0,
+        versionCode: 17,
+        versionName: '2.0.5',
+      })));
+
+      try {
+        await expect(
+          appController.syncAdminTvRelease({ versionName: '2.0.6' }),
+        ).rejects.toThrow(BadRequestException);
+        expect(existsSync(join(releaseDir, 'latest.json'))).toBe(false);
+      } finally {
+        appService.replaceTvReleaseAssetFetcherForTesting(undefined);
         restoreEnv('WRJDYK_RELEASES_DIR', previousReleaseDir);
         rmSync(releaseDir, { force: true, recursive: true });
       }

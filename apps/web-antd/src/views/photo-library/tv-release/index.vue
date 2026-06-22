@@ -22,10 +22,12 @@ import {
 
 import {
   getTvReleaseInfoApi,
+  syncTvReleasePackageApi,
   uploadTvReleasePackageApi,
 } from '#/api/photo-library';
 
 const loading = ref(false);
+const syncing = ref(false);
 const uploading = ref(false);
 const releaseInfo = ref<TvReleaseInfo>();
 const fileList = ref<UploadFile[]>([]);
@@ -99,6 +101,20 @@ async function uploadRelease() {
   }
 }
 
+async function syncRelease() {
+  syncing.value = true;
+  try {
+    releaseInfo.value = await syncTvReleasePackageApi({
+      forceUpdate: form.forceUpdate,
+      releaseNotes: form.releaseNotes.trim(),
+      versionName: form.versionName.trim() || undefined,
+    });
+    message.success('TV 升级包已拉取并设为最新版本');
+  } finally {
+    syncing.value = false;
+  }
+}
+
 function formatSize(value?: number) {
   if (!value) return '-';
   if (value < 1024 * 1024) return `${(value / 1024).toFixed(1)} KB`;
@@ -122,7 +138,12 @@ onMounted(loadReleaseInfo);
     <div class="tv-release-page">
       <Card title="当前发布状态">
         <template #extra>
-          <Button :loading="loading" @click="loadReleaseInfo">刷新</Button>
+          <div class="release-actions">
+            <Button :loading="loading" @click="loadReleaseInfo">刷新</Button>
+            <Button :loading="syncing" type="primary" @click="syncRelease">
+              拉取配套 TV 包
+            </Button>
+          </div>
         </template>
 
         <Descriptions bordered :column="2" size="small">
@@ -265,6 +286,12 @@ onMounted(loadReleaseInfo);
 }
 
 .force-update-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.release-actions {
   display: flex;
   gap: 8px;
   align-items: center;

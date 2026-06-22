@@ -369,6 +369,12 @@ export interface UploadTvReleasePackageInput {
   versionName: string;
 }
 
+export interface SyncTvReleasePackageInput {
+  forceUpdate?: boolean;
+  releaseNotes?: string;
+  versionName?: string;
+}
+
 export interface PhotoSourceConfig {
   activeSourceId: string;
   feiniu: FeiniuRuntimeConfig;
@@ -500,6 +506,13 @@ export function getTvReleaseInfoApi() {
 export function uploadTvReleasePackageApi(input: UploadTvReleasePackageInput) {
   return requestClient.upload<TvReleaseInfo>(
     '/admin/photo-library/tv-release/upload',
+    input,
+  );
+}
+
+export function syncTvReleasePackageApi(input: SyncTvReleasePackageInput = {}) {
+  return requestClient.post<TvReleaseInfo>(
+    '/admin/photo-library/tv-release/sync',
     input,
   );
 }

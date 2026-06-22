@@ -407,6 +407,27 @@ export class AppController {
     }
   }
 
+  @Post('admin/photo-library/tv-release/sync')
+  async syncAdminTvRelease(
+    @Body()
+    input: {
+      forceUpdate?: boolean | string;
+      releaseNotes?: string;
+      versionName?: string;
+    } = {},
+  ) {
+    try {
+      return {
+        code: 0,
+        data: await this.appService.syncTvReleasePackage(input),
+      };
+    } catch (error) {
+      throw new BadRequestException(
+        error instanceof Error ? error.message : 'Unable to sync TV release package',
+      );
+    }
+  }
+
   @Get('admin/photo-library/overview')
   getAdminPhotoLibraryOverview() {
     return {

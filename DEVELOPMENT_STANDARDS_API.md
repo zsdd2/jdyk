@@ -151,6 +151,7 @@ CodeGraph 审计时间：2026-06-13。
 | `GET` | `/api/releases/:fileName` | APK 下载 |
 | `GET` | `/api/admin/photo-library/tv-release` | 管理端读取 TV 发布状态 |
 | `POST` | `/api/admin/photo-library/tv-release/upload` | 管理端上传 TV APK，必须走 multipart upload |
+| `POST` | `/api/admin/photo-library/tv-release/sync` | 管理端从 GitHub Release 拉取配套 TV APK 和 latest.json |
 
 ## 5. 共享播放协议
 

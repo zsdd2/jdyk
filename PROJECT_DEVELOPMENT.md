@@ -1,5 +1,14 @@
 # 往日重现开发进度同步
 
+## 2026-06-22 管理端拉新后自动同步 TV 发布资源
+
+- 当前目标：让管理端/后端拉取新版本后，自动拉取当前配套的 Android TV GitHub Release 资源并更新本地 TV 升级 manifest，同时保留管理端手动上传 APK 的兜底入口。
+- 当前状态：后端新增 `POST /api/admin/photo-library/tv-release/sync`，会按版本号从 `tv-v<version>` GitHub Release 拉取 `latest.json` 和 `wangri-tv-<version>.apk`，写入 `WRJDYK_RELEASES_DIR` 下的 APK、版本 JSON 和 `latest.json`；`WRJDYK_TV_RELEASE_SYNC=auto` 时后端启动后后台自动同步，网络失败只记录日志不阻塞后台启动。管理端 TV 版本管理页新增“拉取配套 TV 包”按钮，仍保留原手动上传 APK 流程。`docker-compose.latest.yml`、`docker-compose.feiniu.yml`、`.env.example` 和 `.env.feiniu.example` 已新增同步开关和仓库/下载基址配置。
+- 已验证步骤：先新增后端同步 GitHub TV release assets 的聚焦测试并确认旧代码因缺少同步方法失败；实现后 `node_modules\.bin\jest.CMD app.controller.spec.ts --runInBand --testNamePattern="TV APK release|syncs the matching GitHub TV release assets|rejects synced TV release assets|lists uploaded TV APK releases"` 通过 4 项。先新增前端 `syncTvReleasePackageApi` 测试并确认旧代码缺少该函数失败；实现后 `..\..\node_modules\.bin\vitest.CMD run src\api\photo-library-tv-release.spec.ts` 通过 2 项。`app.controller.spec.ts` 全量 83 项通过；`corepack pnpm -F @vben/web-antd run typecheck`、`corepack pnpm -F @wrjdyk/backend-api build`、两个 Compose `config` 展开通过；`..\..\node_modules\.bin\vite.CMD build --mode production` 通过并生成 `apps\web-antd\dist.zip`。
+- 运行态/远端验证：`https://github.com/zsdd2/jdyk/releases/download/tv-v2.0.6/latest.json` 可直连读取；调用后端构建产物 `AppService.syncTvReleasePackage({ versionName: '2.0.6' })` 到临时 `WRJDYK_RELEASES_DIR` 成功下载签名 APK，返回 `fileName=wangri-tv-2.0.6.apk`、`versionCode=18`、`sizeBytes=14248616`、SHA256 `c6694d54cd769b32b5ec59e373186eacd55d77edf38b80ac78971a2bdeea88d6`，并写出本地 `/releases/wangri-tv-2.0.6.apk` manifest。
+- 下一步计划：提交并推送自动同步功能；飞牛上线时先备份数据目录，再 `docker compose pull && docker compose up -d`，后端启动会自动同步配套 TV 包；如自动同步失败，可在管理端 TV 版本管理页点击“拉取配套 TV 包”或继续手动上传 APK。
+- 当前风险：自动同步依赖部署环境能访问 GitHub Release；无法访问时后台不会崩溃，但需要在管理端手动上传 APK 或配置可访问的 `WRJDYK_TV_RELEASE_DOWNLOAD_BASE_URL`。
+
 ## 2026-06-18 Android TV 2.0.6 本地版本打包
 
 - 当前目标：把当前本地修复打包成新版，统一本地版本号并保留 APK 构建产物。

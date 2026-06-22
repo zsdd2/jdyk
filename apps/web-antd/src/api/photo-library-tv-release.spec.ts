@@ -42,4 +42,25 @@ describe('TV release API', () => {
     );
     expect(requestClientMock.post).not.toHaveBeenCalled();
   });
+
+  it('posts the requested version when syncing TV release assets', async () => {
+    requestClientMock.post.mockResolvedValue({ ok: true });
+    const { syncTvReleasePackageApi } = await import('./photo-library');
+
+    await syncTvReleasePackageApi({
+      forceUpdate: false,
+      releaseNotes: 'Android TV 2.0.6 login focus fix',
+      versionName: '2.0.6',
+    });
+
+    expect(requestClientMock.post).toHaveBeenCalledWith(
+      '/admin/photo-library/tv-release/sync',
+      {
+        forceUpdate: false,
+        releaseNotes: 'Android TV 2.0.6 login focus fix',
+        versionName: '2.0.6',
+      },
+    );
+    expect(requestClientMock.upload).not.toHaveBeenCalled();
+  });
 });
