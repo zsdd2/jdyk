@@ -3,11 +3,12 @@
 ## 2026-06-18 Android TV 2.0.6 本地版本打包
 
 - 当前目标：把当前本地修复打包成新版，统一本地版本号并保留 APK 构建产物。
-- 当前状态：项目/后端/管理端版本已更新为 `2.0.6`；Android TV 已更新为 `versionCode 18 / versionName 2.0.6`；GHCR workflow raw 版本、生产 env、Compose、Feiniu env 示例、TV README、manifest 测试和本地发布脚本默认参数已同步到 `2.0.6`。本轮只做本地版本与本地 APK 打包，未推送、未打 tag、未触发远端签名发布。
+- 当前状态：项目/后端/管理端版本已更新为 `2.0.6`；Android TV 已更新为 `versionCode 18 / versionName 2.0.6`；GHCR workflow raw 版本、生产 env、Compose、Feiniu env 示例、TV README、manifest 测试和本地发布脚本默认参数已同步到 `2.0.6`。本轮已提交并推送 `main`，已创建并推送 `v2.0.6` 与 `tv-v2.0.6` 标签触发远端发布。
 - 已验证步骤：`node --test .\scripts\android-tv\generate-update-manifest.test.mjs` 通过 3 项；完整 `.\scripts\release\verify-local-release.ps1` 通过，覆盖版本面检查、Android update manifest 测试、后端 3 个 Jest 套件 118 项、Web 5 个聚焦测试 6 项、后端 build、Web typecheck/production build、Compose 展开、Android debug/release 构建、APK 元数据检查和本地 APK 留档；复核产物为 `releases\wangri-tv-2.0.6-debug.apk` SHA256 `52D8DF78DAAF422EDA3475AFB2B287969ACD35D627C79F392310C55DB405D4B1`、`releases\wangri-tv-2.0.6-unsigned.apk` SHA256 `EBD67B6E93C7A386899D7DFC340153ACA50431B28857C92ECDA777ED7E8E03BC`。
 - 本地构建证据：`releases/wangri-tv-2.0.6-debug.apk` 大小 `17483631` 字节，SHA256 `52D8DF78DAAF422EDA3475AFB2B287969ACD35D627C79F392310C55DB405D4B1`；`releases/wangri-tv-2.0.6-unsigned.apk` 大小 `14228232` 字节，SHA256 `EBD67B6E93C7A386899D7DFC340153ACA50431B28857C92ECDA777ED7E8E03BC`。本机 release 包未签名，只能作本机构建验证；正式远程升级仍应使用 GitHub Android TV workflow 生成的签名 APK。
-- 下一步计划：如需发布正式更新，再提交本地改动并按 release 流程推送 `main`、创建 `v2.0.6` 和 `tv-v2.0.6` 标签，随后验证 GHCR 与 GitHub Release 签名 APK。
-- 当前风险：尚未在真实 Android 9 设备上安装 `2.0.6` Debug APK 做遥控器焦点实机复测；正式发布前仍需生成签名 APK。
+- 远端发布证据：提交 `0b029b9 Release Android TV 2.0.6` 已推送到 `origin/main`；远端标签 `v2.0.6` 与 `tv-v2.0.6` 已推送。GitHub Actions 已触发：`Publish GHCR Images` main run `27924809347`、`Publish GHCR Images` tag run `27924818206`、`Android TV Release` run `27924818196`。查询时三个关键工作流仍在 `in_progress`；本机 `gh auth status` 显示 token 失效，随后公开 GitHub API 触发未认证限流，结论需恢复 gh 认证后复查。
+- 下一步计划：恢复 GitHub CLI 认证后复查三个 Actions 结论，并确认 `tv-v2.0.6` GitHub Release 是否产出签名 `wangri-tv-2.0.6.apk`、`latest.json` 和 `feiniu-update.env`；随后再记录签名 APK 大小/hash。
+- 当前风险：尚未在真实 Android 9 设备上安装 `2.0.6` Debug APK 做遥控器焦点实机复测；正式远程升级以 GitHub Android TV workflow 生成的签名 APK 为准，目前还未复查到远端工作流最终结论。
 
 ## 2026-06-18 Android TV 登录按钮焦点滑开修复
 
