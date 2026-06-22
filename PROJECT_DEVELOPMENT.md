@@ -1,5 +1,15 @@
 # 往日重现开发进度同步
 
+## 2026-06-22 TV 配套包同步误拉旧版本修复
+
+- 当前目标：修复管理端点击“拉取配套 TV 包”时误拉 `2.0.2` 的问题，确保默认拉取当前后台版本对应的 TV Release。
+- 根因确认：同步默认版本解析顺序错误，未填写版本号时优先读取旧部署环境里的 `WRJDYK_TV_UPDATE_VERSION_NAME`；生产环境该值残留为 `2.0.2`，因此点击“拉取配套 TV 包”会覆盖当前 manifest 为 `wangri-tv-2.0.2.apk`。这不是 GitHub Release 资产问题，而是后端默认版本选择链路问题。
+- 当前状态：`resolveTvReleaseSyncVersionName()` 已改为“显式输入 -> `WRJDYK_TV_RELEASE_SYNC_VERSION_NAME` -> 当前后台版本 -> 旧 `WRJDYK_TV_UPDATE_VERSION_NAME` 兜底”。管理端按钮文案改为“拉取当前后台配套 TV 包”，版本输入框提示留空会使用当前后台版本。
+- 已验证步骤：先新增回归测试 `uses the backend release version for TV sync when legacy update env is stale`，确认旧代码会请求 `tv-v2.0.2/latest.json` 并失败；修复后该测试通过。`node_modules\.bin\jest.CMD app.controller.spec.ts --runInBand --testNamePattern="TV release|syncs the matching GitHub TV release assets|uses the backend release version|rejects synced TV release assets|lists uploaded TV APK releases"` 通过 4 项；`..\..\node_modules\.bin\vitest.CMD run src\api\photo-library-tv-release.spec.ts` 通过 2 项；`corepack pnpm -F @vben/web-antd run typecheck`、`corepack pnpm -F @wrjdyk/backend-api build`、`git diff --check` 均通过。
+- 运行态/远端验证：用后端构建产物设置临时 `WRJDYK_RELEASES_DIR`，同时强制 `WRJDYK_TV_UPDATE_VERSION_NAME=2.0.2` 且不传 `versionName` 调用 `AppService.syncTvReleasePackage({})`，实际下载 `wangri-tv-2.0.6.apk`，返回 `versionCode=18`、`sizeBytes=14248616`、SHA256 `c6694d54cd769b32b5ec59e373186eacd55d77edf38b80ac78971a2bdeea88d6`。
+- 下一步计划：提交并推送修复；生产更新后重启/拉取新镜像，后端自动同步或点击“拉取当前后台配套 TV 包”即可把当前 manifest 从 `2.0.2` 修正为 `2.0.6`。
+- 当前风险：现有生产 releases 目录里已经被误设为 latest 的 `2.0.2` manifest 不会由旧代码自愈，必须部署本修复后重新触发同步。
+
 ## 2026-06-22 管理端拉新后自动同步 TV 发布资源
 
 - 当前目标：让管理端/后端拉取新版本后，自动拉取当前配套的 Android TV GitHub Release 资源并更新本地 TV 升级 manifest，同时保留管理端手动上传 APK 的兜底入口。

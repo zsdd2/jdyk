@@ -395,6 +395,51 @@ describe('AppController', () => {
       }
     });
 
+    it('uses the backend release version for TV sync when legacy update env is stale', async () => {
+      const previousReleaseDir = process.env.WRJDYK_RELEASES_DIR;
+      const previousSyncVersion = process.env.WRJDYK_TV_RELEASE_SYNC_VERSION_NAME;
+      const previousUpdateVersion = process.env.WRJDYK_TV_UPDATE_VERSION_NAME;
+      const releaseDir = join(testDataDir, 'sync-prefers-backend-version');
+      const apkBuffer = Buffer.from('signed-apk-v206');
+      mkdirSync(releaseDir, { recursive: true });
+      process.env.WRJDYK_RELEASES_DIR = releaseDir;
+      delete process.env.WRJDYK_TV_RELEASE_SYNC_VERSION_NAME;
+      process.env.WRJDYK_TV_UPDATE_VERSION_NAME = '2.0.2';
+      appService.replaceTvReleaseAssetFetcherForTesting(async (url) => {
+        expect(url).toContain('/tv-v2.0.6/');
+        if (url.endsWith('/latest.json')) {
+          return Buffer.from(JSON.stringify({
+            apkUrl: 'https://github.com/zsdd2/jdyk/releases/download/tv-v2.0.6/wangri-tv-2.0.6.apk',
+            forceUpdate: false,
+            publishedAt: '2026-06-22T01:58:35Z',
+            releaseNotes: 'Android TV update',
+            sha256: createHash('sha256').update(apkBuffer).digest('hex'),
+            sizeBytes: apkBuffer.length,
+            versionCode: 18,
+            versionName: '2.0.6',
+          }));
+        }
+        return apkBuffer;
+      });
+
+      try {
+        const synced = await appController.syncAdminTvRelease({});
+
+        expect(synced.data.manifest).toEqual(expect.objectContaining({
+          versionCode: 18,
+          versionName: '2.0.6',
+        }));
+        expect(existsSync(join(releaseDir, 'wangri-tv-2.0.6.apk'))).toBe(true);
+        expect(existsSync(join(releaseDir, 'wangri-tv-2.0.2.apk'))).toBe(false);
+      } finally {
+        appService.replaceTvReleaseAssetFetcherForTesting(undefined);
+        restoreEnv('WRJDYK_RELEASES_DIR', previousReleaseDir);
+        restoreEnv('WRJDYK_TV_RELEASE_SYNC_VERSION_NAME', previousSyncVersion);
+        restoreEnv('WRJDYK_TV_UPDATE_VERSION_NAME', previousUpdateVersion);
+        rmSync(releaseDir, { force: true, recursive: true });
+      }
+    });
+
     it('rejects synced TV release assets when the manifest version does not match the requested version', async () => {
       const previousReleaseDir = process.env.WRJDYK_RELEASES_DIR;
       const releaseDir = join(testDataDir, 'sync-version-mismatch');

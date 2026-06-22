@@ -916,8 +916,8 @@ export class AppService implements OnModuleDestroy, OnModuleInit {
   private resolveTvReleaseSyncVersionName(versionName?: string): string {
     return normalizeTvVersionName(versionName)
       || normalizeTvVersionName(process.env.WRJDYK_TV_RELEASE_SYNC_VERSION_NAME)
-      || normalizeTvVersionName(process.env.WRJDYK_TV_UPDATE_VERSION_NAME)
-      || this.getHealth().version;
+      || normalizeTvVersionName(this.getHealth().version)
+      || normalizeTvVersionName(process.env.WRJDYK_TV_UPDATE_VERSION_NAME);
   }
 
   private resolveTvReleaseDownloadBaseUrl(versionName: string): string {

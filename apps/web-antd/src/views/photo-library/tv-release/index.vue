@@ -141,7 +141,7 @@ onMounted(loadReleaseInfo);
           <div class="release-actions">
             <Button :loading="loading" @click="loadReleaseInfo">刷新</Button>
             <Button :loading="syncing" type="primary" @click="syncRelease">
-              拉取配套 TV 包
+              拉取当前后台配套 TV 包
             </Button>
           </div>
         </template>
@@ -226,7 +226,7 @@ onMounted(loadReleaseInfo);
       <Card title="上传新版本">
         <Form layout="vertical">
           <Form.Item label="版本号 versionName" required>
-            <Input v-model:value="form.versionName" placeholder="例如 1.0.2" />
+            <Input v-model:value="form.versionName" placeholder="留空则使用当前后台版本，例如 2.0.6" />
           </Form.Item>
           <Form.Item label="版本码 versionCode" required>
             <InputNumber
