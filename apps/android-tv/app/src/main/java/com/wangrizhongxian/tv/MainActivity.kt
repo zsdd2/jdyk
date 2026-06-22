@@ -113,6 +113,10 @@ private suspend fun FocusRequester.requestFocusWhenReady() {
   runCatching { requestFocus() }
 }
 
+fun shouldHandleTvFocusMove(type: KeyEventType): Boolean = type == KeyEventType.KeyDown
+
+fun shouldHandleTvActivation(type: KeyEventType): Boolean = type == KeyEventType.KeyUp
+
 private val Context.settingsDataStore by preferencesDataStore("wangri_zhongxian_tv")
 private val serverUrlKey = stringPreferencesKey("server_url")
 private val usernameKey = stringPreferencesKey("username")
@@ -2035,7 +2039,7 @@ private fun ProtocolChip(
       .focusRequester(focusedRequester)
       .onFocusChanged { focused = it.isFocused }
       .onPreviewKeyEvent { event ->
-        if (event.type == KeyEventType.KeyUp && (event.key == Key.DirectionCenter || event.key == Key.Enter)) {
+        if (shouldHandleTvActivation(event.type) && (event.key == Key.DirectionCenter || event.key == Key.Enter)) {
           onToggle()
           true
         } else {
@@ -2088,7 +2092,7 @@ private fun GlassLoginField(
       .focusRequester(focusRequester)
       .onFocusChanged { focused = it.isFocused }
       .onPreviewKeyEvent { event ->
-        if (event.type != KeyEventType.KeyUp) return@onPreviewKeyEvent false
+        if (!shouldHandleTvFocusMove(event.type)) return@onPreviewKeyEvent false
         when (event.key) {
           Key.DirectionDown -> {
             onMoveDown?.invoke()
@@ -2166,17 +2170,19 @@ private fun GlassPrimaryButton(
       .focusRequester(focusRequester)
       .onFocusChanged { focused = it.isFocused }
       .onPreviewKeyEvent { event ->
-        if (event.type != KeyEventType.KeyUp) return@onPreviewKeyEvent false
         when (event.key) {
           Key.DirectionCenter, Key.Enter -> {
+            if (!shouldHandleTvActivation(event.type)) return@onPreviewKeyEvent false
             onClick()
             true
           }
           Key.DirectionUp -> {
+            if (!shouldHandleTvFocusMove(event.type)) return@onPreviewKeyEvent false
             onMoveUp?.invoke()
             onMoveUp != null
           }
           Key.DirectionDown -> {
+            if (!shouldHandleTvFocusMove(event.type)) return@onPreviewKeyEvent false
             onMoveDown?.invoke()
             onMoveDown != null
           }
@@ -2207,9 +2213,9 @@ private fun SmallGlassLink(
     .height(34.dp)
     .onFocusChanged { focused = it.isFocused }
     .onPreviewKeyEvent { event ->
-      if (event.type != KeyEventType.KeyUp) return@onPreviewKeyEvent false
       when (event.key) {
         Key.DirectionCenter, Key.Enter -> {
+          if (!shouldHandleTvActivation(event.type)) return@onPreviewKeyEvent false
           onClick()
           true
         }

@@ -1,5 +1,22 @@
 # 往日重现开发进度同步
 
+## 2026-06-18 Android TV 2.0.6 本地版本打包
+
+- 当前目标：把当前本地修复打包成新版，统一本地版本号并保留 APK 构建产物。
+- 当前状态：项目/后端/管理端版本已更新为 `2.0.6`；Android TV 已更新为 `versionCode 18 / versionName 2.0.6`；GHCR workflow raw 版本、生产 env、Compose、Feiniu env 示例、TV README、manifest 测试和本地发布脚本默认参数已同步到 `2.0.6`。本轮只做本地版本与本地 APK 打包，未推送、未打 tag、未触发远端签名发布。
+- 已验证步骤：`node --test .\scripts\android-tv\generate-update-manifest.test.mjs` 通过 3 项；完整 `.\scripts\release\verify-local-release.ps1` 通过，覆盖版本面检查、Android update manifest 测试、后端 3 个 Jest 套件 118 项、Web 5 个聚焦测试 6 项、后端 build、Web typecheck/production build、Compose 展开、Android debug/release 构建、APK 元数据检查和本地 APK 留档；复核产物为 `releases\wangri-tv-2.0.6-debug.apk` SHA256 `52D8DF78DAAF422EDA3475AFB2B287969ACD35D627C79F392310C55DB405D4B1`、`releases\wangri-tv-2.0.6-unsigned.apk` SHA256 `EBD67B6E93C7A386899D7DFC340153ACA50431B28857C92ECDA777ED7E8E03BC`。
+- 本地构建证据：`releases/wangri-tv-2.0.6-debug.apk` 大小 `17483631` 字节，SHA256 `52D8DF78DAAF422EDA3475AFB2B287969ACD35D627C79F392310C55DB405D4B1`；`releases/wangri-tv-2.0.6-unsigned.apk` 大小 `14228232` 字节，SHA256 `EBD67B6E93C7A386899D7DFC340153ACA50431B28857C92ECDA777ED7E8E03BC`。本机 release 包未签名，只能作本机构建验证；正式远程升级仍应使用 GitHub Android TV workflow 生成的签名 APK。
+- 下一步计划：如需发布正式更新，再提交本地改动并按 release 流程推送 `main`、创建 `v2.0.6` 和 `tv-v2.0.6` 标签，随后验证 GHCR 与 GitHub Release 签名 APK。
+- 当前风险：尚未在真实 Android 9 设备上安装 `2.0.6` Debug APK 做遥控器焦点实机复测；正式发布前仍需生成签名 APK。
+
+## 2026-06-18 Android TV 登录按钮焦点滑开修复
+
+- 当前目标：修复 Android 9 设备登录界面从密码框移动到“立即登录”按钮时焦点无法稳定停留、会继续滑到下方选项的问题。
+- 当前状态：已定位根因是登录页方向键移动和确认激活都在 `KeyUp` 阶段处理；从密码框按下方向键后，焦点到达登录按钮，同一次按键抬起事件可能被新焦点按钮接收并继续执行 `DirectionDown`，导致焦点自动跳到“记住密码”。已将登录页焦点移动改为只在 `KeyDown` 消费，确认/回车激活仍保持 `KeyUp`。
+- 已验证步骤：先新增 `AlbumParsingTest.loginFocusMovementUsesKeyDownAndActivationUsesKeyUp` 并确认缺少事件相位约束时失败；实现后该定向测试通过；`AlbumParsingTest` 全量通过；Android TV `:app:testDebugUnitTest` 全量通过；`:app:assembleDebug` 通过。
+- 下一步计划：如有真实 Android 9 设备连接，安装 Debug APK 后用遥控器复测“密码框向下 -> 立即登录 -> 确认登录”和“立即登录向下 -> 记住密码”的焦点路径。
+- 当前风险：本轮已完成单测和构建验证，但尚未在真实 Android 9 电视设备上做遥控器实机复测。
+
 ## 2026-06-17 2.0.5 播放编辑与 Android TV 登录/竖图修复
 
 - 当前目标：把播放相册里的时间、地点、天气快速修改入口合并到“快速修改 AI 旁白”模态；Android TV 竖构图不再随机使用左右侧栏模板，避免真机 Android 9 上照片与文案重叠；电视端登录不再凭旧 token 免登录进入相册，输入后台地址、账号、密码后直接进入首个可播放相册，底部改为“记住密码/自动登录”。

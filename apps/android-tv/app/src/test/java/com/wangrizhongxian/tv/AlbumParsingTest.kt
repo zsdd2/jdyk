@@ -1,5 +1,6 @@
 package com.wangrizhongxian.tv
 
+import androidx.compose.ui.input.key.KeyEventType
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -396,6 +397,14 @@ class AlbumParsingTest {
     assertEquals(true, isTouchActivationEnabled(TvTouchTarget.ScanDone))
     assertEquals(true, isTouchActivationEnabled(TvTouchTarget.LoginInput))
     assertEquals(true, isTouchActivationEnabled(TvTouchTarget.LoginButton))
+  }
+
+  @Test
+  fun loginFocusMovementUsesKeyDownAndActivationUsesKeyUp() {
+    assertTrue(shouldHandleTvFocusMove(KeyEventType.KeyDown))
+    assertFalse(shouldHandleTvFocusMove(KeyEventType.KeyUp))
+    assertFalse(shouldHandleTvActivation(KeyEventType.KeyDown))
+    assertTrue(shouldHandleTvActivation(KeyEventType.KeyUp))
   }
 }
 
